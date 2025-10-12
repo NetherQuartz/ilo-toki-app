@@ -1,44 +1,30 @@
 package one.larkin.ilotoki
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
-import androidx.compose.foundation.isSystemInDarkTheme
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.animation.with
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.ui.tooling.preview.Preview
-
-import ilotoki.composeapp.generated.resources.Res
-import ilotoki.composeapp.generated.resources.compose_multiplatform
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -46,12 +32,18 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.LocalContext
+import io.shubham0204.smollm.SmolLM
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.net.URL
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +54,80 @@ fun App() {
         var targetLanguage by remember { mutableStateOf("en") }
         var query by remember { mutableStateOf("") }
         var result by remember { mutableStateOf("") }
+
+        val context = LocalContext.current
+        val model = remember { SmolLM() }
+        var isLoading by remember { mutableStateOf(true) }
+        var progress by remember { mutableStateOf("Подготовка...") }
+
+        // --- Загрузка модели ---
+        LaunchedEffect(Unit) {
+            val modelDir = File(context.filesDir, "models").apply { mkdirs() }
+            val modelFile = File(modelDir, "model.gguf")
+            try {
+                val hfUrl =
+                    "https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged/resolve/main/tatoeba-tok-multi-gemma-2-2.6B-Q8_0.gguf"
+
+                if (!modelFile.exists()) {
+                    progress = "Скачивание модели…"
+                    withContext(Dispatchers.IO) {
+                        val connection = URL(hfUrl).openConnection()
+                        val totalSize = connection.contentLengthLong
+                        connection.getInputStream().use { input ->
+                            modelFile.outputStream().use { output ->
+                                val buffer = ByteArray(8192)
+                                var bytesRead: Int
+                                var downloaded: Long = 0
+                                var lastPercent = 0
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    output.write(buffer, 0, bytesRead)
+                                    downloaded += bytesRead
+                                    if (totalSize > 0) {
+                                        val percent = ((downloaded * 100) / totalSize).toInt()
+                                        if (percent >= lastPercent + 5) {
+                                            lastPercent = percent
+                                            withContext(Dispatchers.Main) {
+                                                progress = "Скачивание модели: $percent%"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    progress = "Модель уже на диске"
+                }
+
+                progress = "Загрузка модели в память…"
+                withContext(Dispatchers.IO) {
+                    model.load(modelFile.absolutePath)
+                    progress = "Прогрев..."
+                    translate(model, "Привет!", fromToki = false, other = "Russian")
+                }
+
+                // Переключаем на главный поток только тут
+                isLoading = false
+            } catch (e: Exception) {
+                modelFile.delete()
+                e.printStackTrace()
+                progress = "Ошибка: ${e.message} ${e.localizedMessage}"
+            }
+        }
+
+        // --- Отображение UI ---
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(progress)
+                }
+            }
+        } else
 
         Scaffold(
             bottomBar = {
@@ -87,7 +153,6 @@ fun App() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (state) {
-                                // FROM Toki Pona: [Toki Pona] [Swap] [Chips]
                                 Box(
                                     modifier = Modifier.weight(1f),
                                     contentAlignment = Alignment.Center
@@ -111,9 +176,9 @@ fun App() {
                                 ) {
                                     Row {
                                         listOf(
-                                            Pair("🇺🇸", "en"),
-                                            Pair("🇷🇺", "ru"),
-                                            Pair("🇻🇳", "vi")
+                                            Pair("🇺🇸", "English"),
+                                            Pair("🇷🇺", "Russian"),
+                                            Pair("🇻🇳", "Vietnamese")
                                         ).forEach { lang ->
                                             val selected = targetLanguage == lang.second
                                             FilterChip(
@@ -133,9 +198,9 @@ fun App() {
                                 ) {
                                     Row {
                                         listOf(
-                                            Pair("🇺🇸", "en"),
-                                            Pair("🇷🇺", "ru"),
-                                            Pair("🇻🇳", "vi")
+                                            Pair("🇺🇸", "English"),
+                                            Pair("🇷🇺", "Russian"),
+                                            Pair("🇻🇳", "Vietnamese")
                                         ).forEach { lang ->
                                             val selected = targetLanguage == lang.second
                                             FilterChip(
@@ -180,6 +245,7 @@ fun App() {
                 verticalArrangement = Arrangement.Top,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                val coroutineScope = rememberCoroutineScope()
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -191,7 +257,9 @@ fun App() {
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            result = translate(query, fromTokiPona, targetLanguage)
+                            coroutineScope.launch {
+                                result = translate(model, query, fromTokiPona, targetLanguage)
+                            }
                         }
                     )
                 )
@@ -218,9 +286,10 @@ fun App() {
     }
 }
 
-fun translate(query: String, fromTokiPona: Boolean, target: String): String {
-    return when {
-        query.lowercase().trim() == "toki a!" && target == "Russian" -> "Привет!"
-        else -> "(${if (fromTokiPona) "From TP" else "To TP"}) → $target: $query"
-    }
+fun translate(model: SmolLM, query: String, fromToki: Boolean, other: String): String {
+    val source = if (fromToki) "Toki Pona" else other
+    val target = if (fromToki) other else "Toki Pona"
+    val ans = model.getResponse("Translate $source to $target.\nQuery: ${query.removeSuffix(" ")}\nAnswer:")
+    val logMsg = "" // "from_toki: $fromToki other: $other\nsource: $source target: $target\n"
+    return logMsg + ans.removePrefix(" ")
 }
