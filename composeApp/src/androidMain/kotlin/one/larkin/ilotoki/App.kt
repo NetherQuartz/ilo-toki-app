@@ -40,6 +40,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalContext
 import io.shubham0204.smollm.SmolLM
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -104,6 +106,7 @@ fun App() {
                     model.load(modelFile.absolutePath)
                     progress = "Прогрев..."
                     translate(model, "Привет!", fromToki = false, other = "Russian")
+                        .collect { _ -> delay(10) }
                 }
 
                 // Переключаем на главный поток только тут
@@ -257,8 +260,10 @@ fun App() {
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            coroutineScope.launch {
-                                result = translate(model, query, fromTokiPona, targetLanguage)
+                            coroutineScope.launch(Dispatchers.Main) {
+                                result = ""
+                                translate(model, query, fromTokiPona, targetLanguage)
+                                    .collect { token -> result += token; delay(10) }
                             }
                         }
                     )
@@ -286,10 +291,8 @@ fun App() {
     }
 }
 
-fun translate(model: SmolLM, query: String, fromToki: Boolean, other: String): String {
+fun translate(model: SmolLM, query: String, fromToki: Boolean, other: String): Flow<String> {
     val source = if (fromToki) "Toki Pona" else other
     val target = if (fromToki) other else "Toki Pona"
-    val ans = model.getResponse("Translate $source to $target.\nQuery: ${query.removeSuffix(" ")}\nAnswer:")
-    val logMsg = "" // "from_toki: $fromToki other: $other\nsource: $source target: $target\n"
-    return logMsg + ans.removePrefix(" ")
+    return model.getResponseAsFlow("Translate $source to $target.\nQuery: ${query.removeSuffix(" ")}\nAnswer:")
 }
