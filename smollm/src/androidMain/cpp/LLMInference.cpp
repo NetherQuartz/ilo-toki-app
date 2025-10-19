@@ -187,6 +187,7 @@ LLMInference::stopCompletion() {
         addChatMessage(_response.c_str(), "assistant");
     }
     _response.clear();
+    llama_memory_clear(llama_get_memory(_ctx), true);
     _prevLen = llama_chat_apply_template(_chatTemplate, _messages.data(), _messages.size(), false, nullptr, 0);
     if (_prevLen < 0) {
         throw std::runtime_error("llama_chat_apply_template() in LLMInference::stopCompletion() failed");
