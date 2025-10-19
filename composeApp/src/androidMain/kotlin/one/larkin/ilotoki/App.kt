@@ -53,7 +53,7 @@ import java.net.URL
 fun App() {
     IloTokiTheme {
         var fromTokiPona by remember { mutableStateOf(true) }
-        var targetLanguage by remember { mutableStateOf("en") }
+        var targetLanguage by remember { mutableStateOf("English") }
         var query by remember { mutableStateOf("") }
         var result by remember { mutableStateOf("") }
 
