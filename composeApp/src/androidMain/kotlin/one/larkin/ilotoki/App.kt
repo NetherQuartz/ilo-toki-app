@@ -103,7 +103,13 @@ fun App() {
 
                 progress = "Загрузка модели в память…"
                 withContext(Dispatchers.IO) {
-                    model.load(modelFile.absolutePath)
+                    model.load(
+                        modelFile.absolutePath,
+                        params = SmolLM.InferenceParams(
+                            temperature = 0.5f,
+                            storeChats = false
+                        )
+                    )
                     progress = "Прогрев..."
                     translate(model, "Привет!", fromToki = false, other = "Russian")
                         .collect { _ -> delay(10) }
