@@ -65,10 +65,9 @@ fun App() {
         // --- Загрузка модели ---
         LaunchedEffect(Unit) {
             val modelDir = File(context.filesDir, "models").apply { mkdirs() }
-            val modelFile = File(modelDir, "model.gguf")
+            val modelFile = File(modelDir, "tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf")
             try {
-                val hfUrl =
-                    "https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged/resolve/main/tatoeba-tok-multi-gemma-2-2.6B-Q8_0.gguf"
+                val hfUrl = "https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged-Q6_K-GGUF/resolve/main/tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf"
 
                 if (!modelFile.exists()) {
                     progress = "Скачивание модели…"
