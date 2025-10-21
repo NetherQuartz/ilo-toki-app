@@ -56,11 +56,14 @@ fun App() {
         var targetLanguage by remember { mutableStateOf("English") }
         var query by remember { mutableStateOf("") }
         var result by remember { mutableStateOf("") }
+        var isTranslating by remember { mutableStateOf(false) }
 
         val context = LocalContext.current
         val model = remember { SmolLM() }
         var isLoading by remember { mutableStateOf(true) }
-        var progress by remember { mutableStateOf("Подготовка...") }
+        var progress by remember { mutableStateOf("Preparing...") }
+        var downloadProgress by remember { mutableStateOf(0f) }
+        var sizeText by remember { mutableStateOf("") }
 
         // --- Загрузка модели ---
         LaunchedEffect(Unit) {
@@ -70,7 +73,7 @@ fun App() {
                 val hfUrl = "https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged-Q6_K-GGUF/resolve/main/tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf"
 
                 if (!modelFile.exists()) {
-                    progress = "Скачивание модели…"
+                    progress = "Downloading model…"
                     withContext(Dispatchers.IO) {
                         val connection = URL(hfUrl).openConnection()
                         val totalSize = connection.contentLengthLong
@@ -85,22 +88,32 @@ fun App() {
                                     downloaded += bytesRead
                                     if (totalSize > 0) {
                                         val percent = ((downloaded * 100) / totalSize).toInt()
-                                        if (percent >= lastPercent + 5) {
+                                        if (percent >= lastPercent + 1) {
                                             lastPercent = percent
+                                            val downloadedGB = downloaded / (1024.0 * 1024.0 * 1024.0)
+                                            val totalGB = totalSize / (1024.0 * 1024.0 * 1024.0)
+                                            val sizeTextValue = String.format(java.util.Locale.getDefault(), "%.2f / %.2f GiB", downloadedGB, totalGB)
                                             withContext(Dispatchers.Main) {
-                                                progress = "Скачивание модели: $percent%"
+                                                progress = "Downloading model…"
+                                                downloadProgress = percent / 100f
+                                                sizeText = sizeTextValue
                                             }
                                         }
                                     }
+                                }
+                                // Обновляем прогресс до 100% после завершения скачивания
+                                withContext(Dispatchers.Main) {
+                                    downloadProgress = 1f
                                 }
                             }
                         }
                     }
                 } else {
-                    progress = "Модель уже на диске"
+                    progress = "Model already on disk"
+                    downloadProgress = 1f
                 }
 
-                progress = "Загрузка модели в память…"
+                progress = "Loading model into memory…"
                 withContext(Dispatchers.IO) {
                     model.load(
                         modelFile.absolutePath,
@@ -109,30 +122,102 @@ fun App() {
                             storeChats = false
                         )
                     )
-                    progress = "Прогрев..."
-                    translate(model, "Привет!", fromToki = false, other = "Russian")
-                        .collect { _ -> delay(10) }
                 }
 
-                // Переключаем на главный поток только тут
                 isLoading = false
             } catch (e: Exception) {
-                modelFile.delete()
                 e.printStackTrace()
-                progress = "Ошибка: ${e.message} ${e.localizedMessage}"
+                progress = "Error: ${e.localizedMessage}. Retrying..."
+                // Удаляем папку models полностью
+                modelDir.deleteRecursively()
+                // Повторная попытка загрузки
+                withContext(Dispatchers.Main) {
+                    isLoading = true
+                    progress = "Retrying download..."
+                }
+                // Запускаем повторно загрузку модели
+                this.launch {
+                    try {
+                        val modelDirRetry = File(context.filesDir, "models").apply { mkdirs() }
+                        val modelFileRetry = File(modelDirRetry, "tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf")
+                        val hfUrl = "https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged-Q6_K-GGUF/resolve/main/tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf"
+                        progress = "Downloading model…"
+                        withContext(Dispatchers.IO) {
+                            val connection = URL(hfUrl).openConnection()
+                            val totalSize = connection.contentLengthLong
+                            connection.getInputStream().use { input ->
+                                modelFileRetry.outputStream().use { output ->
+                                    val buffer = ByteArray(8192)
+                                    var bytesRead: Int
+                                    var downloaded: Long = 0
+                                    var lastPercent = 0
+                                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                                        output.write(buffer, 0, bytesRead)
+                                        downloaded += bytesRead
+                                        if (totalSize > 0) {
+                                            val percent = ((downloaded * 100) / totalSize).toInt()
+                                            if (percent >= lastPercent + 1) {
+                                                lastPercent = percent
+                                                val downloadedGB = downloaded / (1024.0 * 1024.0 * 1024.0)
+                                                val totalGB = totalSize / (1024.0 * 1024.0 * 1024.0)
+                                                val sizeTextValue = String.format(java.util.Locale.getDefault(), "%.2f / %.2f GiB", downloadedGB, totalGB)
+                                                withContext(Dispatchers.Main) {
+                                                    progress = "Downloading model…"
+                                                    downloadProgress = percent / 100f
+                                                    sizeText = sizeTextValue
+                                                }
+                                            }
+                                        }
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        downloadProgress = 1f
+                                    }
+                                }
+                            }
+                        }
+                        progress = "Loading model into memory…"
+                        withContext(Dispatchers.IO) {
+                            model.load(
+                                modelFileRetry.absolutePath,
+                                params = SmolLM.InferenceParams(
+                                    temperature = 0.5f,
+                                    storeChats = false
+                                )
+                            )
+                        }
+                        isLoading = false
+                    } catch (inner: Exception) {
+                        progress = "Retry download error: ${inner.message}"
+                    }
+                }
             }
         }
 
-        // --- Отображение UI ---
         if (isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(progress)
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (progress.startsWith("Downloading")) {
+                            Text(progress)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { downloadProgress.coerceIn(0f, 1f) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 32.dp),
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(sizeText, style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(progress)
+                        }
+                    }
                 }
             }
         } else
@@ -255,20 +340,29 @@ fun App() {
             ) {
                 val coroutineScope = rememberCoroutineScope()
                 OutlinedTextField(
+                    placeholder = { Text("Query") },
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Enter text") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 120.dp),
+                    shape = RoundedCornerShape(12.dp),
                     singleLine = false,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            coroutineScope.launch(Dispatchers.Main) {
+                            coroutineScope.launch {
                                 result = ""
-                                translate(model, query, fromTokiPona, targetLanguage)
-                                    .collect { token -> result += token; delay(10) }
+                                isTranslating = true
+                                withContext(Dispatchers.IO) {
+                                    translate(model, query, fromTokiPona, targetLanguage)
+                                        .collect { token ->
+                                            withContext(Dispatchers.Main) {
+                                                result += token
+                                            }
+                                        }
+                                }
+                                isTranslating = false
                             }
                         }
                     )
@@ -290,6 +384,8 @@ fun App() {
                             )
                         }
                     }
+                } else if (isTranslating) {
+                    CircularProgressIndicator()
                 }
             }
         }
