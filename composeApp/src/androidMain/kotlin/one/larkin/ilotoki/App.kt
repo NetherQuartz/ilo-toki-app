@@ -29,6 +29,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -40,7 +41,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalContext
 import io.shubham0204.smollm.SmolLM
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -227,100 +227,108 @@ fun App() {
                 @OptIn(ExperimentalAnimationApi::class)
                 Surface(
                     tonalElevation = 4.dp,
-                    shadowElevation = 2.dp,
-                    modifier = Modifier.imePadding()
+                    shape = RoundedCornerShape(12.dp, 12.dp, 0.dp, 0.dp),
                 ) {
-                    AnimatedContent(
-                        targetState = fromTokiPona,
-                        transitionSpec = {
-                            (slideInVertically { it / 8 } + fadeIn()) togetherWith
-                            (slideOutVertically { -it / 8 } + fadeOut())
-                        },
-                        label = "LanguageBarSlide"
-                    ) { state ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (state) {
-                                Box(
-                                    modifier = Modifier.weight(1f),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("Toki Pona", style = MaterialTheme.typography.titleMedium)
-                                }
-
-                                IconButton(onClick = {
-                                    fromTokiPona = !fromTokiPona
-                                    if (result.isNotEmpty()) {
-                                        query = result
-                                        result = ""
+                    Surface(
+                        modifier = Modifier
+                            .imePadding()
+                            .navigationBarsPadding()
+                    ) {
+                        AnimatedContent(
+                            targetState = fromTokiPona,
+                            transitionSpec = {
+                                (slideInVertically { it / 8 } + fadeIn()) togetherWith
+                                (slideOutVertically { -it / 8 } + fadeOut())
+                            },
+                            label = "LanguageBarSlide"
+                        ) { state ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            )
+                            {
+                                if (state) {
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("Toki Pona", style = MaterialTheme.typography.titleMedium)
                                     }
-                                }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Swap languages")
-                                }
 
-                                Box(
-                                    modifier = Modifier.weight(1f),
-                                    contentAlignment = Alignment.CenterEnd
-                                ) {
-                                    Row {
-                                        listOf(
-                                            Pair("🇺🇸", "English"),
-                                            Pair("🇷🇺", "Russian"),
-                                            Pair("🇻🇳", "Vietnamese")
-                                        ).forEach { lang ->
-                                            val selected = targetLanguage == lang.second
-                                            FilterChip(
-                                                selected = selected,
-                                                onClick = { targetLanguage = lang.second },
-                                                label = { Text(lang.first) },
-                                                modifier = Modifier.padding(horizontal = 2.dp)
-                                            )
+                                    IconButton(onClick = {
+                                        fromTokiPona = !fromTokiPona
+                                        if (result.isNotEmpty()) {
+                                            query = result
+                                            result = ""
+                                        }
+                                    }) {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Swap languages")
+                                    }
+
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.CenterEnd
+                                    ) {
+                                        Row {
+                                            listOf(
+                                                Pair("🇺🇸", "English"),
+                                                Pair("🇷🇺", "Russian"),
+                                                Pair("🇻🇳", "Vietnamese")
+                                            ).forEach { lang ->
+                                                val selected = targetLanguage == lang.second
+                                                FilterChip(
+                                                    selected = selected,
+                                                    onClick = { targetLanguage = lang.second },
+                                                    label = { Text(lang.first) },
+                                                    modifier = Modifier.padding(horizontal = 2.dp),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                )
+                                            }
                                         }
                                     }
-                                }
-                            } else {
-                                // TO Toki Pona: [Chips] [Swap] [Toki Pona]
-                                Box(
-                                    modifier = Modifier.weight(1f),
-                                    contentAlignment = Alignment.CenterStart
-                                ) {
-                                    Row {
-                                        listOf(
-                                            Pair("🇺🇸", "English"),
-                                            Pair("🇷🇺", "Russian"),
-                                            Pair("🇻🇳", "Vietnamese")
-                                        ).forEach { lang ->
-                                            val selected = targetLanguage == lang.second
-                                            FilterChip(
-                                                selected = selected,
-                                                onClick = { targetLanguage = lang.second },
-                                                label = { Text(lang.first) },
-                                                modifier = Modifier.padding(horizontal = 2.dp)
-                                            )
+                                } else {
+                                    // TO Toki Pona: [Chips] [Swap] [Toki Pona]
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        Row {
+                                            listOf(
+                                                Pair("🇺🇸", "English"),
+                                                Pair("🇷🇺", "Russian"),
+                                                Pair("🇻🇳", "Vietnamese")
+                                            ).forEach { lang ->
+                                                val selected = targetLanguage == lang.second
+                                                FilterChip(
+                                                    selected = selected,
+                                                    onClick = { targetLanguage = lang.second },
+                                                    label = { Text(lang.first) },
+                                                    modifier = Modifier.padding(horizontal = 2.dp),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                )
+                                            }
                                         }
                                     }
-                                }
 
-                                IconButton(onClick = {
-                                    fromTokiPona = !fromTokiPona
-                                    if (result.isNotEmpty()) {
-                                        query = result
-                                        result = ""
+                                    IconButton(onClick = {
+                                        fromTokiPona = !fromTokiPona
+                                        if (result.isNotEmpty()) {
+                                            query = result
+                                            result = ""
+                                        }
+                                    }) {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Swap languages")
                                     }
-                                }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Swap languages")
-                                }
 
-                                Box(
-                                    modifier = Modifier.weight(1f),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("Toki Pona", style = MaterialTheme.typography.titleMedium)
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("Toki Pona", style = MaterialTheme.typography.titleMedium)
+                                    }
                                 }
                             }
                         }

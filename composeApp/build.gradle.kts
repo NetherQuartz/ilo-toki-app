@@ -66,6 +66,6 @@ android {
 
 dependencies {
     debugImplementation(compose.uiTooling)
-    implementation("com.google.android.material:material:1.13.0")
+    implementation(libs.material)
     implementation(project(":smollm"))
 }
