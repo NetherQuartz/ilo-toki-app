@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.material.color.DynamicColors
 
 class MainActivity : ComponentActivity() {
@@ -16,7 +17,8 @@ class MainActivity : ComponentActivity() {
         DynamicColors.applyToActivityIfAvailable(this)
 
         setContent {
-            App()
+            val viewModel: MainViewModel = viewModel()
+            App(viewModel = viewModel)
         }
     }
 }

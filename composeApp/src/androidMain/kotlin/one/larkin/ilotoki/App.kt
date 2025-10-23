@@ -44,13 +44,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.net.URL
+
+fun translate(model: SmolLM, query: String, fromToki: Boolean, other: String): Flow<String> {
+    return try {
+        val source = if (fromToki) "Toki Pona" else other
+        val target = if (fromToki) other else "Toki Pona"
+        val prompt = "Translate $source to $target.\nQuery: ${query.trim()}\nAnswer:"
+        model.getResponseAsFlow(prompt)
+    } catch (e: Exception) {
+        // Возвращаем Flow с ошибкой
+        kotlinx.coroutines.flow.flow {
+            emit("Error: ${e.message}")
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Preview
-fun App() {
+fun App(viewModel: MainViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     IloTokiTheme {
         var fromTokiPona by remember { mutableStateOf(true) }
         var targetLanguage by remember { mutableStateOf("English") }
@@ -59,170 +70,52 @@ fun App() {
         var isTranslating by remember { mutableStateOf(false) }
 
         val context = LocalContext.current
-        val model = remember { SmolLM() }
-        var isLoading by remember { mutableStateOf(true) }
-        var progress by remember { mutableStateOf("Preparing...") }
-        var downloadProgress by remember { mutableStateOf(0f) }
-        var sizeText by remember { mutableStateOf("") }
+        val modelState by viewModel.modelState.collectAsState()
 
-        // --- Загрузка модели ---
+        // Инициализация модели при первом запуске
         LaunchedEffect(Unit) {
-            val modelDir = File(context.filesDir, "models").apply { mkdirs() }
-            val modelFile = File(modelDir, "tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf")
-            try {
-                val hfUrl = "https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged-Q6_K-GGUF/resolve/main/tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf"
-
-                if (!modelFile.exists()) {
-                    progress = "Downloading model…"
-                    withContext(Dispatchers.IO) {
-                        val connection = URL(hfUrl).openConnection()
-                        val totalSize = connection.contentLengthLong
-                        connection.getInputStream().use { input ->
-                            modelFile.outputStream().use { output ->
-                                val buffer = ByteArray(8192)
-                                var bytesRead: Int
-                                var downloaded: Long = 0
-                                var lastPercent = 0
-                                while (input.read(buffer).also { bytesRead = it } != -1) {
-                                    output.write(buffer, 0, bytesRead)
-                                    downloaded += bytesRead
-                                    if (totalSize > 0) {
-                                        val percent = ((downloaded * 100) / totalSize).toInt()
-                                        if (percent >= lastPercent + 1) {
-                                            lastPercent = percent
-                                            val downloadedGB = downloaded / (1024.0 * 1024.0 * 1024.0)
-                                            val totalGB = totalSize / (1024.0 * 1024.0 * 1024.0)
-                                            val sizeTextValue = String.format(java.util.Locale.getDefault(), "%.2f / %.2f GiB", downloadedGB, totalGB)
-                                            withContext(Dispatchers.Main) {
-                                                progress = "Downloading model…"
-                                                downloadProgress = percent / 100f
-                                                sizeText = sizeTextValue
-                                            }
-                                        }
-                                    }
-                                }
-                                // Обновляем прогресс до 100% после завершения скачивания
-                                withContext(Dispatchers.Main) {
-                                    downloadProgress = 1f
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    progress = "Model already on disk"
-                    downloadProgress = 1f
-                }
-
-                progress = "Loading model into memory…"
-                withContext(Dispatchers.IO) {
-                    model.load(
-                        modelFile.absolutePath,
-                        params = SmolLM.InferenceParams(
-                            temperature = 0.5f,
-                            storeChats = false
-                        )
-                    )
-                }
-
-                isLoading = false
-            } catch (e: Exception) {
-                e.printStackTrace()
-                progress = "Error: ${e.localizedMessage}. Retrying..."
-                // Удаляем папку models полностью
-                modelDir.deleteRecursively()
-                // Повторная попытка загрузки
-                withContext(Dispatchers.Main) {
-                    isLoading = true
-                    progress = "Retrying download..."
-                }
-                // Запускаем повторно загрузку модели
-                this.launch {
-                    try {
-                        val modelDirRetry = File(context.filesDir, "models").apply { mkdirs() }
-                        val modelFileRetry = File(modelDirRetry, "tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf")
-                        val hfUrl = "https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged-Q6_K-GGUF/resolve/main/tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf"
-                        progress = "Downloading model…"
-                        withContext(Dispatchers.IO) {
-                            val connection = URL(hfUrl).openConnection()
-                            val totalSize = connection.contentLengthLong
-                            connection.getInputStream().use { input ->
-                                modelFileRetry.outputStream().use { output ->
-                                    val buffer = ByteArray(8192)
-                                    var bytesRead: Int
-                                    var downloaded: Long = 0
-                                    var lastPercent = 0
-                                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                                        output.write(buffer, 0, bytesRead)
-                                        downloaded += bytesRead
-                                        if (totalSize > 0) {
-                                            val percent = ((downloaded * 100) / totalSize).toInt()
-                                            if (percent >= lastPercent + 1) {
-                                                lastPercent = percent
-                                                val downloadedGB = downloaded / (1024.0 * 1024.0 * 1024.0)
-                                                val totalGB = totalSize / (1024.0 * 1024.0 * 1024.0)
-                                                val sizeTextValue = String.format(java.util.Locale.getDefault(), "%.2f / %.2f GiB", downloadedGB, totalGB)
-                                                withContext(Dispatchers.Main) {
-                                                    progress = "Downloading model…"
-                                                    downloadProgress = percent / 100f
-                                                    sizeText = sizeTextValue
-                                                }
-                                            }
-                                        }
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        downloadProgress = 1f
-                                    }
-                                }
-                            }
-                        }
-                        progress = "Loading model into memory…"
-                        withContext(Dispatchers.IO) {
-                            model.load(
-                                modelFileRetry.absolutePath,
-                                params = SmolLM.InferenceParams(
-                                    temperature = 0.5f,
-                                    storeChats = false
-                                )
-                            )
-                        }
-                        isLoading = false
-                    } catch (inner: Exception) {
-                        progress = "Retry download error: ${inner.message}"
-                    }
-                }
-            }
+            viewModel.initializeModel(context)
         }
 
-        if (isLoading) {
+        if (modelState.isLoading) {
             Surface(color = MaterialTheme.colorScheme.background) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (progress.startsWith("Downloading")) {
-                            Text(progress)
+                        if (modelState.progress.startsWith("Downloading")) {
+                            Text(modelState.progress)
                             Spacer(modifier = Modifier.height(8.dp))
                             LinearProgressIndicator(
-                                progress = { downloadProgress.coerceIn(0f, 1f) },
+                                progress = { modelState.downloadProgress.coerceIn(0f, 1f) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 32.dp),
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(sizeText, style = MaterialTheme.typography.bodySmall)
+                            Text(modelState.sizeText, style = MaterialTheme.typography.bodySmall)
                         } else {
                             CircularProgressIndicator()
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(progress)
+                            Text(modelState.progress)
+                        }
+                        
+                        // Показываем ошибку если есть
+                        modelState.error?.let { error ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = error,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
                 }
             }
-        } else
-
-        Scaffold(
+        } else if (modelState.isModelLoaded) {
+            Scaffold(
             bottomBar = {
                 @OptIn(ExperimentalAnimationApi::class)
                 Surface(
@@ -362,15 +255,27 @@ fun App() {
                             coroutineScope.launch {
                                 result = ""
                                 isTranslating = true
-                                withContext(Dispatchers.IO) {
-                                    translate(model, query, fromTokiPona, targetLanguage)
-                                        .collect { token ->
-                                            withContext(Dispatchers.Main) {
-                                                result += token
-                                            }
+                                try {
+                                    val model = viewModel.getModel()
+                                    if (model != null && query.isNotBlank()) {
+                                        withContext(Dispatchers.IO) {
+                                            translate(model, query.trim(), fromTokiPona, targetLanguage)
+                                                .collect { token: String ->
+                                                    withContext(Dispatchers.Main) {
+                                                        result += token
+                                                    }
+                                                }
                                         }
+                                    } else if (model == null) {
+                                        result = "Model not loaded"
+                                    } else {
+                                        result = "Please enter a query"
+                                    }
+                                } catch (e: Exception) {
+                                    result = "Translation error: ${e.message}"
+                                } finally {
+                                    isTranslating = false
                                 }
-                                isTranslating = false
                             }
                         }
                     )
@@ -397,11 +302,12 @@ fun App() {
                 }
             }
         }
+        }
     }
 }
 
-fun translate(model: SmolLM, query: String, fromToki: Boolean, other: String): Flow<String> {
-    val source = if (fromToki) "Toki Pona" else other
-    val target = if (fromToki) other else "Toki Pona"
-    return model.getResponseAsFlow("Translate $source to $target.\nQuery: ${query.removeSuffix(" ")}\nAnswer:")
+@Preview
+@Composable
+fun AppPreview() {
+    App()
 }
