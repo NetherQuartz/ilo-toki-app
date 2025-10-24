@@ -39,6 +39,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import io.shubham0204.smollm.SmolLM
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -158,7 +159,10 @@ fun App(viewModel: MainViewModel = androidx.lifecycle.viewmodel.compose.viewMode
                                             result = ""
                                         }
                                     }) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "Swap languages")
+                                        Icon(
+                                            painter = painterResource(R.drawable.swap_horiz),
+                                            contentDescription = "Swap languages"
+                                        )
                                     }
 
                                     Box(
@@ -213,7 +217,10 @@ fun App(viewModel: MainViewModel = androidx.lifecycle.viewmodel.compose.viewMode
                                             result = ""
                                         }
                                     }) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "Swap languages")
+                                        Icon(
+                                            painter = painterResource(R.drawable.swap_horiz),
+                                            contentDescription = "Swap languages"
+                                        )
                                     }
 
                                     Box(
