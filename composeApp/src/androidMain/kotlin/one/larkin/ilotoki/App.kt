@@ -27,19 +27,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import io.shubham0204.smollm.SmolLM
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -69,9 +73,22 @@ fun App(viewModel: MainViewModel = androidx.lifecycle.viewmodel.compose.viewMode
         var query by remember { mutableStateOf("") }
         var result by remember { mutableStateOf("") }
         var isTranslating by remember { mutableStateOf(false) }
+        var useSitelenPona by remember { mutableStateOf(false) }
 
         val context = LocalContext.current
         val modelState by viewModel.modelState.collectAsState()
+
+        val sitelenPonaFontFamily = FontFamily(
+            Font(
+                R.font.sitelen_pona_pona,
+                FontWeight.Normal
+            )
+        )
+
+        val sitelenPona = TextStyle(
+            fontFamily = sitelenPonaFontFamily,
+            fontSize = 32.sp
+        )
 
         // Инициализация модели при первом запуске
         LaunchedEffect(Unit) {
@@ -249,6 +266,8 @@ fun App(viewModel: MainViewModel = androidx.lifecycle.viewmodel.compose.viewMode
                 val coroutineScope = rememberCoroutineScope()
                 OutlinedTextField(
                     placeholder = { Text("Query") },
+                    textStyle =
+                        if (!fromTokiPona || !useSitelenPona) LocalTextStyle.current else sitelenPona,
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier
@@ -299,13 +318,25 @@ fun App(viewModel: MainViewModel = androidx.lifecycle.viewmodel.compose.viewMode
                         SelectionContainer {
                             Text(
                                 result,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.padding(16.dp)
+                                style = if (fromTokiPona || !useSitelenPona) MaterialTheme.typography.bodyLarge else sitelenPona,
+                                modifier = Modifier.padding(16.dp),
                             )
                         }
                     }
                 } else if (isTranslating) {
                     CircularProgressIndicator()
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Switch(
+                        checked = useSitelenPona,
+                        onCheckedChange = { useSitelenPona = it }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "sitelen pona")
                 }
             }
         }
