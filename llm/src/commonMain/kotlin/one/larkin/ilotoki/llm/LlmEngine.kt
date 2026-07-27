@@ -10,7 +10,14 @@ import kotlinx.coroutines.flow.Flow
  * would cost more memory than the weights themselves.
  */
 data class LlmParams(
-    val temperature: Float = 0.5f,
+    /**
+     * 0 selects greedy decoding, which is what a translator wants: there is one
+     * right answer per input, sampling only ever walks away from it, and the same
+     * sentence translating differently on a second try is a bug to a user. It is
+     * also what the base model's authors recommend.
+     */
+    val temperature: Float = 0.0f,
+    /** Ignored while [temperature] is 0 — greedy decoding has nothing to filter. */
     val minP: Float = 0.1f,
     val contextSize: Int = 2048,
     /** 0 lets the native side size the pool from the available performance cores. */
