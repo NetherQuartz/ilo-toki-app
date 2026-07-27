@@ -162,6 +162,21 @@ smaller model beats a GPU backend here.
 These numbers move a lot with whatever else is running; the ones above were taken
 on a freshly rebooted phone.
 
+### Sampling
+
+Decoding is greedy. Translation has one right answer per input, so sampling can
+only walk away from it, and the same sentence translating differently on a second
+try reads as a bug. Sweeping the temperature over a fixed set of sentences bore
+that out: 0.2 wobbled only where the model was already unsure, and 0.5 turned
+`jan li moku e kili` into "Apple is eaten" and "Яблоко съедено" — never into
+anything better. It also happens to be what the base model's authors recommend,
+and it skips a sort over a 262k-token vocabulary on every token, which is worth a
+few per cent.
+
+Where the model is simply wrong — it renders `jan` as "Player", probably a mark
+left by a Minecraft translation corpus — greedy is wrong deterministically. That
+is a model matter, not a sampling one.
+
 ### Threads
 
 Decoding runs on the performance cores only. `performance_core_count()` reads

@@ -258,7 +258,7 @@ void ilotoki_llm_init(const char* backend_dir) {
 
 ilotoki_llm_params ilotoki_llm_default_params(void) {
     ilotoki_llm_params params = {};
-    params.temperature        = 0.5f;
+    params.temperature        = 0.0f; // greedy; see LlmParams for why
     params.min_p              = 0.1f;
     params.context_size       = kDefaultContextSize;
     params.n_threads          = 0;
