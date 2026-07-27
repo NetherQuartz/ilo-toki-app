@@ -1,49 +1,15 @@
 package one.larkin.ilotoki
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,388 +18,170 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import one.larkin.ilotoki.model.DownloadProgress
-import one.larkin.ilotoki.model.ModelSpec
-import one.larkin.ilotoki.model.ModelState
+import one.larkin.ilotoki.model.ModelCatalog
 import one.larkin.ilotoki.model.ModelStatus
-import one.larkin.ilotoki.resources.Res
-import one.larkin.ilotoki.resources.sitelen_pona_pona
-import one.larkin.ilotoki.resources.swap_horiz
+import one.larkin.ilotoki.ui.AppText
+import one.larkin.ilotoki.ui.BackSquare
+import one.larkin.ilotoki.ui.IconSquare
+import one.larkin.ilotoki.ui.IloTokiIcons
+import one.larkin.ilotoki.ui.MarkTile
+import one.larkin.ilotoki.ui.ProgressLine
+import one.larkin.ilotoki.ui.screens.AboutOverlay
+import one.larkin.ilotoki.ui.screens.HistoryScreen
+import one.larkin.ilotoki.ui.screens.SettingsScreen
+import one.larkin.ilotoki.ui.screens.TranslatorScreen
+import one.larkin.ilotoki.ui.screens.TranslatorsScreen
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
-import org.jetbrains.compose.resources.Font
-import org.jetbrains.compose.resources.painterResource
 
-private const val BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0
+/**
+ * The four places in the app. Deliberately not a navigation library: there is one
+ * level of depth (translators sits under settings) and no deep links, so a single
+ * piece of state is the whole router.
+ */
+enum class Screen(val title: String) {
+    Translator("ilo toki"),
+    Settings("settings"),
+    Models("translators"),
+    History("history"),
+}
 
 @Composable
 fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
-    IloTokiTheme {
-        val modelStatus by viewModel.modelStatus.collectAsStateWithLifecycle()
-        val state by viewModel.state.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
 
+    IloTokiTheme(setting = settings.theme, useSystemColours = settings.useSystemColours) {
         LaunchedEffect(Unit) { viewModel.onStart() }
 
-        Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-            when (val status = modelStatus) {
-                ModelStatus.Ready -> TranslatorScreen(state, viewModel)
-                is ModelStatus.Failed -> ModelErrorScreen(status.message, viewModel)
-                else -> ModelLoadingScreen(status, viewModel)
+        val state by viewModel.state.collectAsStateWithLifecycle()
+        val modelStatus by viewModel.modelStatus.collectAsStateWithLifecycle()
+        val models by viewModel.models.collectAsStateWithLifecycle()
+        val history by viewModel.history.collectAsStateWithLifecycle()
+        val hasUpdate by viewModel.hasUpdate.collectAsStateWithLifecycle()
+
+        var screen by remember { mutableStateOf(Screen.Translator) }
+        var aboutOpen by remember { mutableStateOf(false) }
+
+        val goBack = {
+            when {
+                aboutOpen -> aboutOpen = false
+                screen == Screen.Models -> screen = Screen.Settings
+                else -> screen = Screen.Translator
             }
         }
-    }
-}
+        PlatformBackHandler(enabled = aboutOpen || screen != Screen.Translator, onBack = goBack)
 
-@Composable
-private fun ModelLoadingScreen(status: ModelStatus, viewModel: MainViewModel) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            when (status) {
-                is ModelStatus.Downloading -> {
-                    Text("Downloading model…")
-                    Spacer(Modifier.height(8.dp))
-                    DownloadIndicator(status.progress)
-                }
-
-                else -> {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(16.dp))
-                    Text(if (status is ModelStatus.Loading) "Loading model into memory…" else "Preparing…")
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            ModelPickerButton(viewModel)
-        }
-    }
-}
-
-@Composable
-private fun DownloadIndicator(progress: DownloadProgress) {
-    val hasTotal = progress.total > 0
-    if (hasTotal) {
-        LinearProgressIndicator(
-            progress = { (progress.downloaded.toFloat() / progress.total).coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-        )
-    } else {
-        LinearProgressIndicator(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-        )
-    }
-    Spacer(Modifier.height(4.dp))
-    Text(
-        text = if (hasTotal) {
-            "${formatGiB(progress.downloaded)} / ${formatGiB(progress.total)} GiB"
-        } else {
-            "${formatGiB(progress.downloaded)} GiB"
-        },
-        style = MaterialTheme.typography.bodySmall,
-    )
-}
-
-/** Two decimal places without java.util.Locale, which is not available in common code. */
-private fun formatGiB(bytes: Long): String {
-    val hundredths = ((bytes / BYTES_PER_GIB) * 100).toLong()
-    return "${hundredths / 100}.${(hundredths % 100).toString().padStart(2, '0')}"
-}
-
-@Composable
-private fun ModelErrorScreen(message: String, viewModel: MainViewModel) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp),
-        ) {
-            Text("Could not prepare the model", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = viewModel::retryModel) { Text("Try again") }
-            Spacer(Modifier.height(8.dp))
-            ModelPickerButton(viewModel)
-        }
-    }
-}
-
-@Composable
-private fun TranslatorScreen(state: TranslatorState, viewModel: MainViewModel) {
-    val sitelenPona = TextStyle(
-        fontFamily = FontFamily(Font(Res.font.sitelen_pona_pona)),
-        fontSize = 32.sp,
-    )
-
-    Scaffold(
-        bottomBar = { LanguageBar(state, viewModel) },
-    ) { padding ->
-        val scrollState = rememberScrollState()
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = viewModel::onQueryChange,
-                placeholder = { Text("Query") },
-                textStyle = if (state.fromTokiPona && state.useSitelenPona) sitelenPona else LocalTextStyle.current,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = false,
-                // Toki Pona is written entirely in lower case and none of its words
-                // are in the keyboard's dictionary, so capitalization and autocorrect
-                // only corrupt the input. Typing the other language keeps both.
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Done,
-                    capitalization = if (state.fromTokiPona) {
-                        KeyboardCapitalization.None
-                    } else {
-                        KeyboardCapitalization.Sentences
-                    },
-                    autoCorrectEnabled = !state.fromTokiPona,
-                ),
-                keyboardActions = KeyboardActions(onDone = { viewModel.translate() }),
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Button(
-                onClick = viewModel::translate,
-                enabled = state.query.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (state.isTranslating) "Translating…" else "Translate")
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            if (state.result.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    SelectionContainer {
-                        Text(
-                            text = state.result,
-                            style = if (state.fromTokiPona || !state.useSitelenPona) {
-                                MaterialTheme.typography.bodyLarge
-                            } else {
-                                sitelenPona
-                            },
-                            modifier = Modifier.padding(16.dp),
-                        )
-                    }
-                }
-            }
-
-            if (state.isTranslating) {
-                Spacer(Modifier.height(16.dp))
-                CircularProgressIndicator()
-            }
-
-            state.error?.let { error ->
-                Spacer(Modifier.height(16.dp))
-                Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(16.dp),
-            ) {
-                Switch(
-                    checked = state.useSitelenPona,
-                    onCheckedChange = viewModel::onSitelenPonaChange,
+        val colors = IloTokiTheme.colors
+        Box(Modifier.fillMaxSize().background(colors.bg)) {
+            Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                Header(
+                    screen = screen,
+                    // The dot is the one thing allowed to ask for attention, so it
+                    // means both kinds of «you need to go to settings»: nothing to
+                    // translate with, or something better to translate with.
+                    showDot = hasUpdate ||
+                        (models.isNotEmpty() && models.none { it.downloaded }),
+                    onMark = { aboutOpen = true },
+                    onBack = goBack,
+                    onSettings = { screen = Screen.Settings },
+                    onHistory = { screen = Screen.History },
                 )
-                Spacer(Modifier.width(8.dp))
-                Text("sitelen pona")
+
+                val status = modelStatus
+                if (status is ModelStatus.Downloading) {
+                    ProgressLine(
+                        fraction = status.progress.fractionOrZero(),
+                        modifier = Modifier.padding(horizontal = 14.dp).padding(bottom = 4.dp),
+                    )
+                }
+
+                when (screen) {
+                    Screen.Translator -> TranslatorScreen(
+                        state = state,
+                        status = status,
+                        models = models,
+                        viewModel = viewModel,
+                        onOpenModels = { screen = Screen.Models },
+                    )
+
+                    Screen.Settings -> SettingsScreen(
+                        settings = settings,
+                        models = models,
+                        hasUpdate = hasUpdate,
+                        historyCount = history.size,
+                        viewModel = viewModel,
+                        onOpenModels = { screen = Screen.Models },
+                        onOpenHistory = { screen = Screen.History },
+                        onOpenAbout = { aboutOpen = true },
+                    )
+
+                    Screen.Models -> TranslatorsScreen(
+                        models = models,
+                        status = status,
+                        viewModel = viewModel,
+                        onStartedDownload = { screen = Screen.Translator },
+                    )
+
+                    Screen.History -> HistoryScreen(
+                        entries = history,
+                        viewModel = viewModel,
+                        onReuse = { screen = Screen.Translator },
+                    )
+                }
             }
 
-            ModelPickerButton(viewModel)
+            if (aboutOpen) {
+                AboutOverlay(
+                    model = models.firstOrNull { it.selected }?.spec ?: ModelCatalog.default,
+                    onDismiss = { aboutOpen = false },
+                )
+            }
+        }
+    }
+}
+
+/** Header: mark or back on the left, gear and clock on the right at home only. */
+@Composable
+private fun Header(
+    screen: Screen,
+    showDot: Boolean,
+    onMark: () -> Unit,
+    onBack: () -> Unit,
+    onSettings: () -> Unit,
+    onHistory: () -> Unit,
+) {
+    val atHome = screen == Screen.Translator
+    Row(
+        modifier = Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (atHome) MarkTile(onClick = onMark) else BackSquare(onClick = onBack)
+            AppText(screen.title, IloTokiTheme.type.title, color = IloTokiTheme.colors.ink)
+        }
+        if (atHome) {
+            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                IconSquare(IloTokiIcons.Gear, "settings", onSettings, dot = showDot)
+                IconSquare(IloTokiIcons.Clock, "history", onHistory, iconSize = 22.dp)
+            }
         }
     }
 }
 
 /**
- * Reachable from every screen, not just the translator: if the selected model
- * cannot be downloaded, switching to one already on the device is the only way
- * out, and being stuck on a failing download with no way back is worse than
- * a spare button.
+ * The system back gesture. Android has a hardware/gesture back that would
+ * otherwise leave the app from a subscreen; iOS has the edge swipe.
  */
 @Composable
-private fun ModelPickerButton(viewModel: MainViewModel) {
-    val models by viewModel.models.collectAsStateWithLifecycle()
-    var pickerOpen by remember { mutableStateOf(false) }
+expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
 
-    TextButton(onClick = { pickerOpen = true }) {
-        // Repository names are long; the dialog shows them in full.
-        Text(
-            text = models.firstOrNull { it.selected }?.spec?.displayName ?: "Model",
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-    if (pickerOpen) {
-        ModelPicker(
-            models = models,
-            onSelect = { pickerOpen = false; viewModel.selectModel(it) },
-            onDelete = viewModel::deleteModel,
-            onDismiss = { pickerOpen = false },
-        )
-    }
-}
-
-@Composable
-private fun ModelPicker(
-    models: List<ModelState>,
-    onSelect: (ModelSpec) -> Unit,
-    onDelete: (ModelSpec) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        title = { Text("Model") },
-        text = {
-            Column {
-                models.forEach { model ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(model.spec) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = model.selected,
-                            onClick = { onSelect(model.spec) },
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            // Repository names are long and have no spaces to break
-                            // on, so let them wrap on the hyphens instead of mid-word.
-                            Text(
-                                text = model.spec.displayName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                softWrap = true,
-                            )
-                            Text(
-                                text = buildString {
-                                    append(model.spec.quantization)
-                                    append(" · ")
-                                    append(formatGiB(model.spec.sizeBytes))
-                                    append(" GiB")
-                                    if (model.downloaded) append(" · downloaded")
-                                    if (model.spec.deprecated) append(" · superseded")
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        // Only offer to free space that is actually taken.
-                        if (model.downloaded) {
-                            TextButton(onClick = { onDelete(model.spec) }) { Text("Delete") }
-                        }
-                    }
-                }
-            }
-        },
-    )
-}
-
-@Composable
-private fun LanguageBar(state: TranslatorState, viewModel: MainViewModel) {
-    Surface(
-        tonalElevation = 4.dp,
-        shape = RoundedCornerShape(12.dp, 12.dp, 0.dp, 0.dp),
-    ) {
-        Surface(modifier = Modifier.imePadding().navigationBarsPadding()) {
-            AnimatedContent(
-                targetState = state.fromTokiPona,
-                transitionSpec = {
-                    (slideInVertically { it / 8 } + fadeIn()) togetherWith
-                        (slideOutVertically { -it / 8 } + fadeOut())
-                },
-                label = "LanguageBarSlide",
-            ) { fromTokiPona ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Source on the left, target on the right, swapping sides with the direction.
-                    if (fromTokiPona) {
-                        TokiPonaLabel(Modifier.weight(1f), Alignment.Center)
-                        SwapButton(viewModel::swapDirection)
-                        LanguageChips(state.target, viewModel::onTargetChange, Modifier.weight(1f), Alignment.CenterEnd)
-                    } else {
-                        LanguageChips(
-                            state.target,
-                            viewModel::onTargetChange,
-                            Modifier.weight(1f),
-                            Alignment.CenterStart,
-                        )
-                        SwapButton(viewModel::swapDirection)
-                        TokiPonaLabel(Modifier.weight(1f), Alignment.Center)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TokiPonaLabel(modifier: Modifier, alignment: Alignment) {
-    Box(modifier = modifier, contentAlignment = alignment) {
-        Text(TOKI_PONA, style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-@Composable
-private fun SwapButton(onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
-        Icon(
-            painter = painterResource(Res.drawable.swap_horiz),
-            contentDescription = "Swap languages",
-        )
-    }
-}
-
-@Composable
-private fun LanguageChips(
-    selected: Language,
-    onSelect: (Language) -> Unit,
-    modifier: Modifier,
-    alignment: Alignment,
-) {
-    Box(modifier = modifier, contentAlignment = alignment) {
-        Row {
-            Language.entries.forEach { language ->
-                FilterChip(
-                    selected = language == selected,
-                    onClick = { onSelect(language) },
-                    label = { Text(language.flag) },
-                    modifier = Modifier.padding(horizontal = 2.dp),
-                    shape = RoundedCornerShape(8.dp),
-                )
-            }
-        }
-    }
-}
+/** A server that does not report a length leaves the line empty rather than lying. */
+internal fun DownloadProgress.fractionOrZero(): Float =
+    if (total > 0) (downloaded.toFloat() / total).coerceIn(0f, 1f) else 0f

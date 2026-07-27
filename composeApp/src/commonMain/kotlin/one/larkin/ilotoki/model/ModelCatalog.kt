@@ -24,7 +24,16 @@ data class ModelSpec(
     val promptStyle: PromptStyle,
     /** Superseded, but kept listed so anyone who already has it can still use it. */
     val deprecated: Boolean = false,
-)
+) {
+    /**
+     * The repository this file comes from, for the link in *about*.
+     *
+     * Derived from [url] rather than stored beside it: a hand-written second link
+     * is a thing that silently goes stale when a catalog entry is replaced, and
+     * every download URL already contains the page it belongs to.
+     */
+    val pageUrl: String get() = url.substringBefore("/resolve/")
+}
 
 /**
  * The models the app knows about.
