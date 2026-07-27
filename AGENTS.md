@@ -47,9 +47,9 @@ The guillemets are not: typing them gets a mismatched fallback glyph, so every
 chevron in the UI is `IloTokiIcons.Chevron`, drawn. Check any new punctuation against
 the font before typing it into a string.
 
-**The hard shadow is painted outside the element's bounds.** `Plate` draws it with
-`drawBehind`, so a parent that clips, or a gap narrower than the offset, cuts it off.
-The 13–14 dp gaps in the layouts are what leave room for it. Compose's own
+**The hard shadow is painted outside the element's bounds.** `Modifier.surface` draws
+it, so a parent that clips, or a gap narrower than the offset, cuts it off. The
+13–14 dp gaps in the layouts are what leave room for it. Compose's own
 `Modifier.shadow` is not a substitute — it is blurred, which this design never is.
 For the same reason the swap knob needs `requiredSize` and `zIndex`: it lives in a
 14 dp seam it has to overflow, and over both plates rather than under them.
@@ -109,6 +109,7 @@ submodule update.
 **Producing a model** — base + adapter to the GGUF files the app downloads:
 
 ```shell
+pyenv shell ilo-toki   # `hf` lives only in this env; the shim fails without it
 scripts/merge-and-quantize.sh <base-repo-or-dir> <adapter-repo-or-dir> <name>
 hf upload NetherQuartz/<repo> build/models .
 ```
@@ -184,16 +185,20 @@ merge and format problems that a transformers-only check would not.
   always toki pona and has nothing to choose, so only the other side's pair stamp
   carries the caret and reacts to a tap — and it moves to the other plate when the
   direction flips. `pickerOnSource` in `TranslatorScreen` is the single place that
-  decides this; the popover is anchored from the same flag so it stays under the
-  stamp that opened it.
+  decides which stamp gets it. Where the popover *hangs* is measured, not derived —
+  the plate area and the target plate report themselves through
+  `onGloballyPositioned` — because the target plate's top moves with the keyboard and
+  with whatever state the plate is in. A constant offset is what put the list down at
+  the bottom of the screen in the first place.
 
 ## Current state
 
-*Last updated: 2026-07-27.*
+*Last updated: 2026-07-28.*
 
 - Model: [ilo-toki-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-MiLMMT-46-1b-merged),
   one repository holding the merged weights and four quantizations.
-- **The «sitelen» redesign has landed.** Four screens (translator, settings,
+- **The «sitelen» redesign is on `main`**, merged as
+  [#3](https://github.com/NetherQuartz/ilo-toki-app/pull/3). Four screens (translator, settings,
   translators, history) plus an about overlay, own primitives and tokens instead of
   Material 3, drawn icons, Space Grotesk added beside the sitelen pona font,
   file-backed settings and history. `swap_horiz.xml` is gone — the knob is vertical.
@@ -204,9 +209,24 @@ merge and format problems that a transformers-only check would not.
   deletion, translation in all three languages both ways. The redesign itself was
   walked through on an iPhone 17 Pro simulator and a Pixel 9 emulator: first run,
   download start/pause/resume, translation, script flip, history, both themes.
-- `gh` is installed and authenticated; the HF CLI is logged in as NetherQuartz.
+- **There is no release signing config.** `assembleRelease` produces
+  `composeApp-release-unsigned.apk` and nothing installs it. Test builds so far were
+  signed by hand with the *debug* keystore
+  (`apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android
+  --ks-key-alias androiddebugkey`), which is fine for a phone you own and wrong for
+  anything handed out: the key is public, and a real release later cannot update over
+  it — the signature will not match and the app has to be uninstalled first.
+- `gh` is installed and authenticated as NetherQuartz. The Hugging Face token is
+  stored (`~/.cache/huggingface/token`), but `hf` is only installed in the pyenv env
+  `ilo-toki`; from the default 3.12.2 the shim fails with «command not found».
 
 Open:
+
+- **A real release keystore, before anything is distributed.** `keytool -genkeypair`
+  into a file outside the repository, then `signingConfigs` in
+  [build.gradle.kts](composeApp/build.gradle.kts) reading its passwords from
+  `local.properties` or the environment — never from a committed file. `versionCode`
+  is still 1 and has to start moving once updates are a thing.
 
 - **The model needs retraining.** `jan` comes back as "Player" — almost certainly the
   Minecraft translation corpus, and `jan` is in half of all sentences. Longer inputs
