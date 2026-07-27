@@ -16,13 +16,6 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import one.larkin.ilotoki.ioDispatcher
 
-/** Where the model comes from. Kept in one place so swapping the quant is a one-line change. */
-object ModelSpec {
-    const val FILE_NAME = "tatoeba-tok-multi-gemma-2-2b-merged-q6_k.gguf"
-    const val URL =
-        "https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged-Q6_K-GGUF/resolve/main/$FILE_NAME"
-}
-
 /** Bytes fetched so far out of the total, or -1 when the server did not report a length. */
 data class DownloadProgress(val downloaded: Long, val total: Long)
 

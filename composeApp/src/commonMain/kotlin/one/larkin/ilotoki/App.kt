@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,16 +38,22 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -54,6 +62,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import one.larkin.ilotoki.model.DownloadProgress
+import one.larkin.ilotoki.model.ModelSpec
+import one.larkin.ilotoki.model.ModelState
 import one.larkin.ilotoki.model.ModelStatus
 import one.larkin.ilotoki.resources.Res
 import one.larkin.ilotoki.resources.sitelen_pona_pona
@@ -75,15 +85,15 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
             when (val status = modelStatus) {
                 ModelStatus.Ready -> TranslatorScreen(state, viewModel)
-                is ModelStatus.Failed -> ModelErrorScreen(status.message, viewModel::retryModel)
-                else -> ModelLoadingScreen(status)
+                is ModelStatus.Failed -> ModelErrorScreen(status.message, viewModel)
+                else -> ModelLoadingScreen(status, viewModel)
             }
         }
     }
 }
 
 @Composable
-private fun ModelLoadingScreen(status: ModelStatus) {
+private fun ModelLoadingScreen(status: ModelStatus, viewModel: MainViewModel) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             when (status) {
@@ -99,6 +109,8 @@ private fun ModelLoadingScreen(status: ModelStatus) {
                     Text(if (status is ModelStatus.Loading) "Loading model into memory…" else "Preparing…")
                 }
             }
+            Spacer(Modifier.height(16.dp))
+            ModelPickerButton(viewModel)
         }
     }
 }
@@ -136,7 +148,7 @@ private fun formatGiB(bytes: Long): String {
 }
 
 @Composable
-private fun ModelErrorScreen(message: String, onRetry: () -> Unit) {
+private fun ModelErrorScreen(message: String, viewModel: MainViewModel) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -150,7 +162,9 @@ private fun ModelErrorScreen(message: String, onRetry: () -> Unit) {
                 color = MaterialTheme.colorScheme.error,
             )
             Spacer(Modifier.height(16.dp))
-            Button(onClick = onRetry) { Text("Try again") }
+            Button(onClick = viewModel::retryModel) { Text("Try again") }
+            Spacer(Modifier.height(8.dp))
+            ModelPickerButton(viewModel)
         }
     }
 }
@@ -251,8 +265,97 @@ private fun TranslatorScreen(state: TranslatorState, viewModel: MainViewModel) {
                 Spacer(Modifier.width(8.dp))
                 Text("sitelen pona")
             }
+
+            ModelPickerButton(viewModel)
         }
     }
+}
+
+/**
+ * Reachable from every screen, not just the translator: if the selected model
+ * cannot be downloaded, switching to one already on the device is the only way
+ * out, and being stuck on a failing download with no way back is worse than
+ * a spare button.
+ */
+@Composable
+private fun ModelPickerButton(viewModel: MainViewModel) {
+    val models by viewModel.models.collectAsStateWithLifecycle()
+    var pickerOpen by remember { mutableStateOf(false) }
+
+    TextButton(onClick = { pickerOpen = true }) {
+        // Repository names are long; the dialog shows them in full.
+        Text(
+            text = models.firstOrNull { it.selected }?.spec?.displayName ?: "Model",
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (pickerOpen) {
+        ModelPicker(
+            models = models,
+            onSelect = { pickerOpen = false; viewModel.selectModel(it) },
+            onDelete = viewModel::deleteModel,
+            onDismiss = { pickerOpen = false },
+        )
+    }
+}
+
+@Composable
+private fun ModelPicker(
+    models: List<ModelState>,
+    onSelect: (ModelSpec) -> Unit,
+    onDelete: (ModelSpec) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        title = { Text("Model") },
+        text = {
+            Column {
+                models.forEach { model ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(model.spec) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = model.selected,
+                            onClick = { onSelect(model.spec) },
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            // Repository names are long and have no spaces to break
+                            // on, so let them wrap on the hyphens instead of mid-word.
+                            Text(
+                                text = model.spec.displayName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                softWrap = true,
+                            )
+                            Text(
+                                text = buildString {
+                                    append(model.spec.quantization)
+                                    append(" · ")
+                                    append(formatGiB(model.spec.sizeBytes))
+                                    append(" GiB")
+                                    if (model.downloaded) append(" · downloaded")
+                                    if (model.spec.deprecated) append(" · superseded")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        // Only offer to free space that is actually taken.
+                        if (model.downloaded) {
+                            TextButton(onClick = { onDelete(model.spec) }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 @Composable

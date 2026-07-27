@@ -4,23 +4,25 @@ A translator between [Toki Pona](https://tokipona.org) and English, Russian and
 Vietnamese that runs entirely on the phone. No network is used after the model has
 been downloaded, and nothing you type leaves the device.
 
-The model is [tatoeba-tok-multi-gemma-2-2b-merged][model], a gemma-2-2b fine-tune,
-quantized to GGUF and executed with [llama.cpp](https://github.com/ggml-org/llama.cpp).
+The default model is [ilo-toki-MiLMMT-46-1b-merged][model], a fine-tune of Xiaomi's
+46-language translation model, quantized to GGUF and executed with
+[llama.cpp](https://github.com/ggml-org/llama.cpp).
 
 Android and iOS share the UI, the download logic, the view model and the inference
 core; the platform-specific code is a few dozen lines on each side.
 
-[model]: https://huggingface.co/NetherQuartz/tatoeba-tok-multi-gemma-2-2b-merged
+[model]: https://huggingface.co/NetherQuartz/ilo-toki-MiLMMT-46-1b-merged
 
 ## How it works
 
-The model was fine-tuned on plain completion prompts, not chat exchanges, so no chat
-template is involved. `translationPrompt()` builds:
+These models are fine-tuned on plain completion prompts, not chat exchanges, so no
+chat template is involved. `translationPrompt()` builds the format the selected
+model expects, which for the default one is:
 
 ```
-Translate Toki Pona to English.
-Query: jan li moku e kili
-Answer:
+Translate this from Toki Pona to English:
+Toki Pona: jan li moku e kili
+English:
 ```
 
 and the engine streams the completion back token by token. Each translation starts
@@ -76,8 +78,8 @@ git submodule update --init --recursive
 
 The build delegates to llama.cpp's own CMake with `GGML_CPU_ALL_VARIANTS`, so ggml
 ships one CPU backend per Android baseline (armv8.0 through armv9.2) and picks the
-best match for the device at startup. Only `arm64-v8a` is built — the model is over
-2 GB, which rules out 32-bit devices, and x86 Android phones do not exist.
+best match for the device at startup. Only `arm64-v8a` is built — mapping a model
+this size rules out 32-bit devices, and x86 Android phones do not exist.
 
 ggml discovers those backends by scanning the native library directory, which is why
 the app sets `useLegacyPackaging = true`: the installer has to unpack them to disk
@@ -118,27 +120,47 @@ simulator. It is skipped unless you point it at a GGUF file:
 ILOTOKI_TEST_MODEL=/path/to/model.gguf ./gradlew :llm:iosSimulatorArm64Test
 ```
 
-## The model
+## Models
 
-`ModelSpec` in [`ModelDownload.kt`](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/model/ModelDownload.kt)
-is the only place the file name and URL are defined, so switching quantization is a
-one-line change.
+[`ModelCatalog`](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/model/ModelCatalog.kt)
+lists everything the app can download. Users pick between them, and each entry
+carries its own prompt format — a fine-tune only answers to the format it was
+trained on, and sending the wrong one does not fail loudly: the model keeps
+producing fluent text while quietly ignoring the requested target language. There
+are tests pinning both formats for that reason.
+
+Retiring a model means deleting its entry. Files in the models directory that no
+entry claims are removed on the next launch, which is how a superseded download
+stops occupying a couple of gigabytes forever. Mark an entry `deprecated` first and
+drop it a release later, so anyone who already has it is not left without a
+translator in the meantime.
 
 The download writes to a `.part` file and resumes with a Range request, so an
-interrupted transfer picks up where it stopped instead of starting the 2 GB over.
-Dropped connections are retried automatically; the app only gives up when an attempt
-fails without moving a single byte.
+interrupted transfer picks up where it stopped instead of starting over. Dropped
+connections are retried automatically; the app only gives up when an attempt fails
+without moving a single byte.
 
 ### Memory is the binding constraint
 
-The current Q6_K weights are ~2.15 GB. Measured on a Pixel 6 (8 GB RAM), the whole
-model stays resident, but Android still evicts and re-reads its pages constantly —
-over 240 000 major page faults in one session — which is why the first translation
-after launch is roughly half the speed of later ones.
+Generation is limited by memory bandwidth, so throughput tracks how much of the
+model the system is willing to keep resident. Measured on a Pixel 6 (8 GB), the
+1.29 GB default model runs at 4.5–7.9 tok/s once its pages are in — but a run
+that has to fault them back in drops below 1 tok/s:
 
-Where the model does not fit at all, throughput collapses: on a 2 GB emulator the
-same build managed 0.34 tok/s against 2.6 with enough RAM. A smaller quantization is
-the single largest improvement available, ahead of any GPU backend.
+| Major page faults during the translation | tok/s |
+|---|---|
+| 3–579 | 4.5–7.9 |
+| 128 000 | 0.5 |
+
+Its 2.15 GB predecessor managed about 4 tok/s at best on the same device, and on
+a 2 GB emulator — where it could not fit at all — 0.34 tok/s.
+
+So model size buys speed twice over: fewer bytes to stream per token, and fewer
+occasions for the system to evict the model in the first place. That is why a
+smaller model beats a GPU backend here.
+
+These numbers move a lot with whatever else is running; the ones above were taken
+on a freshly rebooted phone.
 
 ### Threads
 

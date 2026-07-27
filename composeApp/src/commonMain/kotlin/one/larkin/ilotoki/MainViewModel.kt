@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import one.larkin.ilotoki.model.ModelRepository
+import one.larkin.ilotoki.model.ModelSpec
 
 data class TranslatorState(
     val query: String = "",
@@ -26,12 +27,25 @@ class MainViewModel : ViewModel() {
     val state: StateFlow<TranslatorState> = _state.asStateFlow()
 
     val modelStatus = ModelRepository.status
+    val models = ModelRepository.models
 
     private var translation: Job? = null
 
     fun onStart() = ModelRepository.ensureLoaded()
 
     fun retryModel() = ModelRepository.retry()
+
+    fun selectModel(spec: ModelSpec) {
+        cancelTranslation()
+        _state.update { it.copy(result = "", isTranslating = false, error = null) }
+        ModelRepository.select(spec)
+    }
+
+    fun deleteModel(spec: ModelSpec) {
+        cancelTranslation()
+        _state.update { it.copy(result = "", isTranslating = false, error = null) }
+        ModelRepository.delete(spec)
+    }
 
     fun onQueryChange(query: String) = _state.update { it.copy(query = query, error = null) }
 
@@ -70,7 +84,12 @@ class MainViewModel : ViewModel() {
         cancelTranslation()
         _state.update { it.copy(result = "", isTranslating = true, error = null) }
 
-        val prompt = translationPrompt(current.query, current.fromTokiPona, current.target)
+        val prompt = translationPrompt(
+            text = current.query,
+            fromTokiPona = current.fromTokiPona,
+            other = current.target,
+            style = ModelRepository.selectedSpec().promptStyle,
+        )
         translation = viewModelScope.launch {
             try {
                 engine.generate(prompt).collect { piece ->
