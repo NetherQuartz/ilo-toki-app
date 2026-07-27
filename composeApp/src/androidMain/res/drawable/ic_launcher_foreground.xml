@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ilo box with three toki rays, in ink. Same geometry as IloTokiIcons.Mark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!--
+        The mark's farthest corner is 52.1 units from the centre of the 100 grid, so
+        at scale s it lands at 52.1*s dp from the centre of the 108 canvas. A round
+        mask shows a 72 dp circle — radius 36 — and the safe circle is 66, radius 33.
+        0.58 puts the corner at 30.2, comfortably inside both; 0.7 put it at 36.4,
+        which is why the box corners were being sliced off on Pixel's round icons.
+        translate = 54 - 50*scale keeps the mark centred.
+    -->
+    <group
+        android:scaleX="0.58"
+        android:scaleY="0.58"
+        android:translateX="25"
+        android:translateY="25">
+        <path
+            android:fillColor="#14130F"
+            android:pathData="M16,32h68v7h-68z M16,81h68v7h-68z M16,32h7v56h-7z M77,32h7v56h-7z M46.5,32h7v63h-7z M46.5,5h7v16h-7z" />
+        <group
+            android:name="left_ray"
+            android:pivotX="23.5"
+            android:pivotY="15"
+            android:rotation="-38">
+            <path
+                android:fillColor="#14130F"
+                android:pathData="M20,7h7v16h-7z" />
+        </group>
+        <group
+            android:name="right_ray"
+            android:pivotX="76.5"
+            android:pivotY="15"
+            android:rotation="38">
+            <path
+                android:fillColor="#14130F"
+                android:pathData="M73,7h7v16h-7z" />
+        </group>
+    </group>
+</vector>

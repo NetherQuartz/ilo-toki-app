@@ -28,6 +28,40 @@ English:
 and the engine streams the completion back token by token. Each translation starts
 from a cleared KV cache — there is no conversation state to carry over.
 
+**Nothing is downloaded until you ask for it.** Launching the app loads the model
+if it is already on the device and otherwise leaves the screen fully usable with
+the target plate saying so; the slab is what starts the transfer. A download runs
+in the background behind a 12 dp line under the header, can be paused, and resumes
+from its `.part` file afterwards.
+
+## The interface
+
+The look is called **«sitelen»**: bone paper, a 2 dp ink outline on everything, a
+hard blur-free offset shadow, and exactly one saturated colour. That colour —
+`jelo`, the yellow — means one thing and only one thing at a time: *the target of
+the translation, or the active choice*. Filling a second surface with it breaks the
+code that lets the screen be read at a glance, so [`Plate`](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/ui/Primitives.kt)
+takes a background rather than defining variants.
+
+The screen is two stacked plates — source above, target below — with a swap knob on
+the seam and the primary action as a slab at the foot. Settings, the model list, the
+history stack and the about card each have their own place; none of them interrupts
+translating.
+
+Everything visual is built from the primitives in
+[`ui/Primitives.kt`](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/ui/Primitives.kt)
+and the tokens in [`ui/theme/Theme.kt`](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/ui/theme/Theme.kt);
+the icons are drawn as `ImageVector`s from rectangles, triangles and circles on a
+100×100 grid in [`ui/IloTokiIcons.kt`](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/ui/IloTokiIcons.kt).
+Material 3 is still on the classpath, but nothing in the app looks like it.
+
+Two type families are used. Space Grotesk carries the UI and translated text.
+**sitelen pona is a ligature font**: the app writes plain latin toki pona
+(`sina pona tawa mi`) and turns on standard and contextual ligatures, and the
+glyphs appear on their own — no glyph is ever drawn or looked up by hand. The
+script is flipped from a pill on whichever plate holds toki pona, and there is
+deliberately no setting for it: it is a property of the text, not a preference.
+
 ## Layout
 
 | Path | What lives there |
@@ -208,4 +242,8 @@ holds up all the others.
 
 llama.cpp is MIT. The model inherits the [Gemma Terms of Use][gemma].
 
+Both bundled fonts are under the SIL Open Font License: [Space Grotesk][grotesk]
+(text of the licence in [`licenses/`](licenses)) and sitelen pona pona.
+
 [gemma]: https://ai.google.dev/gemma/terms
+[grotesk]: https://github.com/floriankarsten/space-grotesk

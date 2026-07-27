@@ -1,0 +1,175 @@
+package one.larkin.ilotoki.ui
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathBuilder
+import androidx.compose.ui.graphics.vector.group
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.unit.dp
+
+/**
+ * The whole icon set, drawn from rectangles, triangles and circles on a 100×100
+ * grid with a 7/100 stroke. There is no icon font and no hand-drawn path beyond
+ * that — the shapes are the design language, so they are built here rather than
+ * imported, and the geometry below is the same as the design bundle's SVGs.
+ */
+object IloTokiIcons {
+
+    /** `ilo` box with three `toki` rays. Header, about card, empty-state watermark. */
+    val Mark: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "mark",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 100f,
+            viewportHeight = 100f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                // The box, its lid and floor, and the middle ray.
+                rect(16f, 32f, 68f, 7f)
+                rect(16f, 81f, 68f, 7f)
+                rect(16f, 32f, 7f, 56f)
+                rect(77f, 32f, 7f, 56f)
+                rect(46.5f, 32f, 7f, 63f)
+                rect(46.5f, 5f, 7f, 16f)
+            }
+            // The outer two rays lean away from the middle one.
+            group(name = "left-ray", rotate = -38f, pivotX = 23.5f, pivotY = 15f) {
+                path(fill = SolidColor(Color.Black)) { rect(20f, 7f, 7f, 16f) }
+            }
+            group(name = "right-ray", rotate = 38f, pivotX = 76.5f, pivotY = 15f) {
+                path(fill = SolidColor(Color.Black)) { rect(73f, 7f, 7f, 16f) }
+            }
+        }.build()
+    }
+
+    /** Settings. Carries the update dot. */
+    val Gear: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "gear",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 100f,
+            viewportHeight = 100f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) { teeth() }
+            group(name = "diagonal-teeth", rotate = 45f, pivotX = 50f, pivotY = 50f) {
+                path(fill = SolidColor(Color.Black)) { teeth() }
+            }
+            path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 10f,
+            ) { circle(50f, 50f, 25f) }
+        }.build()
+    }
+
+    /** History. */
+    val Clock: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "clock",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 100f,
+            viewportHeight = 100f,
+        ).apply {
+            path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 7f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+            ) { circle(50f, 50f, 34f) }
+            path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 7f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+            ) {
+                moveTo(50f, 27f)
+                lineTo(50f, 52f)
+                lineTo(68f, 61f)
+            }
+        }.build()
+    }
+
+    /**
+     * The knob between the plates. Vertical, unlike the `swap_horiz` it replaces —
+     * the two plates are stacked, so the arrows point along the same axis.
+     */
+    val SwapVertical: ImageVector by lazy {
+        filled("swap-vertical") {
+            rect(24f, 34f, 7f, 42f)
+            moveTo(27.5f, 13f); lineTo(43f, 40f); lineTo(12f, 40f); close()
+            rect(69f, 24f, 7f, 42f)
+            moveTo(72.5f, 87f); lineTo(57f, 60f); lineTo(88f, 60f); close()
+        }
+    }
+
+    /**
+     * The `›` affordance, drawn rather than typed: Space Grotesk has no single
+     * guillemet, so the character falls back to a mismatched `>` from another font.
+     */
+    val Chevron: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "chevron",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 100f,
+            viewportHeight = 100f,
+        ).apply {
+            path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 9f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+            ) {
+                moveTo(38f, 22f)
+                lineTo(66f, 50f)
+                lineTo(38f, 78f)
+            }
+        }.build()
+    }
+
+    /** Inside model plates only — never in the header. */
+    val Download: ImageVector by lazy {
+        filled("download") {
+            rect(46.5f, 12f, 7f, 40f)
+            moveTo(50f, 74f); lineTo(28f, 45f); lineTo(72f, 45f); close()
+            rect(16f, 80f, 68f, 7f)
+        }
+    }
+}
+
+private fun filled(name: String, body: PathBuilder.() -> Unit): ImageVector =
+    ImageVector.Builder(
+        name = name,
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 100f,
+        viewportHeight = 100f,
+    ).apply { path(fill = SolidColor(Color.Black), pathBuilder = body) }.build()
+
+/** The four axis-aligned gear teeth; the diagonal four are these rotated by 45°. */
+private fun PathBuilder.teeth() {
+    rect(44.5f, 3f, 11f, 19f)
+    rect(44.5f, 78f, 11f, 19f)
+    rect(3f, 44.5f, 19f, 11f)
+    rect(78f, 44.5f, 19f, 11f)
+}
+
+private fun PathBuilder.rect(x: Float, y: Float, width: Float, height: Float) {
+    moveTo(x, y)
+    lineTo(x + width, y)
+    lineTo(x + width, y + height)
+    lineTo(x, y + height)
+    close()
+}
+
+private fun PathBuilder.circle(cx: Float, cy: Float, radius: Float) {
+    moveTo(cx - radius, cy)
+    arcTo(radius, radius, 0f, true, true, cx + radius, cy)
+    arcTo(radius, radius, 0f, true, true, cx - radius, cy)
+    close()
+}

@@ -32,11 +32,17 @@ sealed interface ModelStatus {
     data class Failed(val message: String) : ModelStatus
 }
 
-/** What the picker needs to know about one catalog entry. */
+/** What the translators screen needs to know about one catalog entry. */
 data class ModelState(
     val spec: ModelSpec,
     val downloaded: Boolean,
     val selected: Boolean,
+    /**
+     * What the file actually takes on disk, including a part-finished download.
+     * The storage plate adds these up rather than the catalog's declared sizes,
+     * so a resumed transfer is counted for what it is so far.
+     */
+    val bytesOnDisk: Long = 0,
 )
 
 /**
@@ -49,6 +55,7 @@ object ModelRepository {
     private const val STALLED_ATTEMPTS_BEFORE_GIVING_UP = 3
     private const val RETRY_DELAY_MILLIS = 2_000L
     private const val SELECTION_FILE = "selected-model"
+    private val MODEL_SUFFIXES = listOf(".gguf", ".gguf.part")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val http by lazy { modelHttpClient() }
@@ -70,8 +77,13 @@ object ModelRepository {
     fun selectedSpec(): ModelSpec = selected
 
     /**
-     * Starts fetching and loading the selected model if that is not already done or
-     * under way. Safe to call from every composition.
+     * Loads the selected model if it is already on the device. Safe to call from
+     * every composition.
+     *
+     * Deliberately does **not** start a download. Spending a gigabyte of someone's
+     * data plan is a decision they make, by tapping the slab or picking a model on
+     * the translators screen — both of which route to [fetchSelected] or [select].
+     * Until then the app stays usable and simply has nothing to answer with.
      */
     fun ensureLoaded() {
         if (engine != null || job?.isActive == true) return
@@ -79,12 +91,31 @@ object ModelRepository {
             selected = readSelection()
             removeUnknownFiles()
             refreshModels()
-            prepare()
+            if (SystemFileSystem.metadataOrNull(fileOf(selected)) != null) prepare()
         }
     }
 
-    /** Retries after a failure, resuming a partial download where one exists. */
-    fun retry() {
+    /**
+     * Stops an in-flight download without throwing away what it has fetched.
+     *
+     * The `.part` file is left alone, so [fetchSelected] picks the transfer up from
+     * where it stopped — pausing a 1.3 GiB download would be pointless otherwise.
+     */
+    fun pauseDownload() {
+        if (_status.value !is ModelStatus.Downloading) return
+        job?.cancel()
+        job = null
+        _status.value = ModelStatus.Idle
+    }
+
+    /**
+     * Fetches the selected model if it is missing and loads it.
+     *
+     * This is the one entry point that is allowed to start a transfer, and it is
+     * also the retry after a failure or a pause: every attempt resumes from the
+     * `.part` file, so the two are the same operation.
+     */
+    fun fetchSelected() {
         if (job?.isActive == true) return
         _status.value = ModelStatus.Idle
         job = scope.launch { prepare() }
@@ -105,8 +136,11 @@ object ModelRepository {
     }
 
     /**
-     * Deletes [spec]'s file. Deleting the model in use unloads it first and leaves
-     * the app on the download screen, which is the honest thing to show.
+     * Deletes [spec]'s file.
+     *
+     * Deleting the model in use unloads it and leaves the app with nothing to
+     * translate with, which the target plate says plainly. It does not re-fetch:
+     * someone who just freed a gigabyte did not ask for it back.
      */
     fun delete(spec: ModelSpec) {
         job?.cancel()
@@ -119,7 +153,6 @@ object ModelRepository {
             SystemFileSystem.delete(file, mustExist = false)
             SystemFileSystem.delete(partialFileOf(file), mustExist = false)
             refreshModels()
-            if (spec.id == selected.id) prepare()
         }
     }
 
@@ -132,26 +165,35 @@ object ModelRepository {
 
     private fun refreshModels() {
         _models.value = ModelCatalog.entries.map { spec ->
+            val file = fileOf(spec)
+            val metadata = SystemFileSystem.metadataOrNull(file)
             ModelState(
                 spec = spec,
-                downloaded = SystemFileSystem.metadataOrNull(fileOf(spec)) != null,
+                downloaded = metadata != null,
                 selected = spec.id == selected.id,
+                bytesOnDisk = metadata?.size ?: partialSizeOf(file),
             )
         }
     }
 
     /**
-     * Removes anything in the models directory the catalog does not claim.
+     * Removes model files the catalog no longer claims.
      *
      * This is what reclaims the space taken by a model that a newer release
      * retired — without it a superseded download sits there for good.
+     *
+     * It matches on the model suffixes rather than deleting everything unrecognised:
+     * the directory is also where the settings and the history live, and a sweep
+     * that defaults to deleting would quietly eat them the next time something is
+     * added beside them.
      */
     private fun removeUnknownFiles() {
         val directory = Path(modelsDirectory())
-        val known = ModelCatalog.knownFileNames() + SELECTION_FILE
+        val known = ModelCatalog.knownFileNames()
         val present = runCatching { SystemFileSystem.list(directory) }.getOrDefault(emptyList())
         for (path in present) {
-            if (path.name !in known) {
+            val isModelFile = MODEL_SUFFIXES.any { path.name.endsWith(it) }
+            if (isModelFile && path.name !in known) {
                 SystemFileSystem.delete(path, mustExist = false)
             }
         }

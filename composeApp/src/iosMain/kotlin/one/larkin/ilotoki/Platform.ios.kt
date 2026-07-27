@@ -5,10 +5,14 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import platform.Foundation.NSApplicationSupportDirectory
+import platform.Foundation.NSBundle
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileSystemFreeSize
+import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLIsExcludedFromBackupKey
 import platform.Foundation.NSUserDomainMask
+import platform.UIKit.UIApplication
 
 /**
  * `Dispatchers.IO` is not public on Kotlin/Native. A small slice of the default
@@ -49,3 +53,19 @@ actual fun modelsDirectory(): String {
 
     return requireNotNull(modelsDirectory.path) { "the models directory has no filesystem path" }
 }
+
+actual val appVersion: String
+    get() = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString")
+        as? String ?: ""
+
+actual fun openUrl(url: String) {
+    val target = NSURL.URLWithString(url) ?: return
+    UIApplication.sharedApplication.openURL(target, options = emptyMap<Any?, Any>(), null)
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun freeDiskBytes(): Long = runCatching {
+    val attributes = NSFileManager.defaultManager
+        .attributesOfFileSystemForPath(modelsDirectory(), error = null)
+    (attributes?.get(NSFileSystemFreeSize) as? NSNumber)?.longLongValue ?: 0L
+}.getOrDefault(0L)

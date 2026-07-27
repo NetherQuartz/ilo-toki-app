@@ -15,8 +15,10 @@ struct ComposeView: UIViewControllerRepresentable {
 struct ContentView: View {
     var body: some View {
         ComposeView()
-            // Compose applies its own IME insets; letting SwiftUI do it too
-            // would shift the content twice.
-            .ignoresSafeArea(.keyboard)
+            // Every safe area, not just the keyboard. SwiftUI would otherwise inset
+            // the Compose view by the status bar and the home indicator, leaving the
+            // window's own white showing above and below the app's background —
+            // Compose already applies all of these insets itself, edge to edge.
+            .ignoresSafeArea()
     }
 }
