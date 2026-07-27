@@ -29,6 +29,4 @@ dependencyResolutionManagement {
 }
 
 include(":composeApp")
-include(":shared")
-
-include(":smollm")
+include(":llm")
