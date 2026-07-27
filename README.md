@@ -140,6 +140,17 @@ interrupted transfer picks up where it stopped instead of starting over. Dropped
 connections are retried automatically; the app only gives up when an attempt fails
 without moving a single byte.
 
+To produce the files a catalog entry points at:
+
+```shell
+scripts/merge-and-quantize.sh <base-repo-or-dir> <adapter-repo-or-dir> <name>
+```
+
+It merges the adapter, converts to GGUF and writes the quantization ladder into
+`build/models`. Read [`scripts/merge_lora.py`](scripts/merge_lora.py) before
+merging one of these adapters by hand — a plain `merge_and_unload()` produces a
+model that repeats a single token, and the reason is not obvious.
+
 ### Memory is the binding constraint
 
 Generation is limited by memory bandwidth, so throughput tracks how much of the
