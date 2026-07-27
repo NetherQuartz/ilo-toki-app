@@ -1,0 +1,9 @@
+package = one.larkin.ilotoki.llm.cinterop
+headers = ilotoki_llm.h
+headerFilter = ilotoki_llm.h
+language = C
+
+# llama.cpp and the C core are C++; Metal/Accelerate back the ggml backends that
+# are compiled into libilotoki_llm.a for the device target. Linking Metal on the
+# simulator too is harmless — that build simply has no Metal symbols to resolve.
+linkerOpts = -lc++ -framework Foundation -framework Metal -framework MetalKit -framework Accelerate
