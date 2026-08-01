@@ -65,7 +65,10 @@ itself. Android's equivalent is the `enableEdgeToEdge()` in `MainActivity`.
 target plate becomes a 76 dp strip, and anything laid out as a stacked column —
 label, big number, buttons — is silently clipped mid-line rather than shrunk. The
 states go through `CollapsedStrip`, one row, one line. Adding a new target state
-means adding its collapsed form in the same change.
+means adding its collapsed form in the same change. The strip only exists while the
+keyboard is up, which is why the tap that puts the keyboard away lives on the strip
+itself rather than on each state — and why the sample chips under the slab are not
+composed at all when `imeVisible`.
 
 **A border drawn behind the content gets painted over.** Several surfaces are
 filled by a *child* that reaches their own edge — the accent growing behind the
@@ -185,8 +188,13 @@ merge and format problems that a transformers-only check would not.
   always toki pona and has nothing to choose, so only the other side's pair stamp
   carries the caret and reacts to a tap — and it moves to the other plate when the
   direction flips. `pickerOnSource` in `TranslatorScreen` is the single place that
-  decides which stamp gets it. Where the popover *hangs* is measured, not derived —
-  the plate area and the target plate report themselves through
+  decides which stamp gets it. It also drops *above* its stamp instead of below when
+  the list would not fit below — which is every time toki pona is the source and the
+  keyboard is up, since the picker then sits on a 76 dp strip at the foot of the
+  plate area and the list landed under the keyboard. That test needs the popover's
+  own height, so it is measured too, and the popover is drawn at alpha 0 for the one
+  frame before that measurement exists. Where the popover *hangs* is measured,
+  not derived — the plate area and the target plate report themselves through
   `onGloballyPositioned` — because the target plate's top moves with the keyboard and
   with whatever state the plate is in. A constant offset is what put the list down at
   the bottom of the screen in the first place.

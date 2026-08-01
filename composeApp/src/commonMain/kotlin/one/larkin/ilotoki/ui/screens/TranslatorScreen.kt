@@ -51,6 +51,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
@@ -100,6 +102,9 @@ private val STAMP_DROP = 48.dp
 /** The popover sits slightly inboard of the plate edge, as in the mock. */
 private val POPOVER_INSET = 22.dp
 
+/** Gap left between the popover and the plate it flips above. */
+private val POPOVER_GAP = 8.dp
+
 /**
  * The main screen: source plate, target plate, the knob on the seam, the slab.
  *
@@ -131,9 +136,14 @@ fun TranslatorScreen(
 
     // Where the target plate starts, so the popover can hang off the stamp there
     // instead of off the bottom of the screen. Measured rather than derived: the
-    // plate's top moves with the keyboard, and with whatever state it is in.
+    // plate's top moves with the keyboard, and with whatever state it is in. The
+    // area's own height and the popover's are measured for the same reason — with
+    // the keyboard up the target plate is a strip at the foot of the area, and the
+    // list dropped below its stamp lands under the keyboard.
     var plateAreaTop by remember { mutableFloatStateOf(0f) }
+    var plateAreaHeight by remember { mutableIntStateOf(0) }
     var targetTop by remember { mutableFloatStateOf(0f) }
+    var popoverHeight by remember { mutableIntStateOf(0) }
 
     // A fresh three every launch, and again whenever one is used.
     var sampleRoll by remember { mutableIntStateOf(0) }
@@ -144,7 +154,10 @@ fun TranslatorScreen(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .onGloballyPositioned { plateAreaTop = it.positionInRoot().y },
+                .onGloballyPositioned {
+                    plateAreaTop = it.positionInRoot().y
+                    plateAreaHeight = it.size.height
+                },
         ) {
             Column(
                 Modifier.fillMaxSize().padding(top = 8.dp).padding(horizontal = 14.dp),
@@ -203,16 +216,30 @@ fun TranslatorScreen(
                     },
                     // Hung off the stamp that opened it: just under the source
                     // plate's own stamp, or under the target plate's, wherever that
-                    // plate currently begins.
+                    // plate currently begins — and *above* that plate instead when
+                    // the list would not fit below it, which is what happens to the
+                    // target plate as soon as the keyboard collapses it into a strip
+                    // at the foot of the area.
                     modifier = Modifier
                         .zIndex(6f)
                         .align(Alignment.TopStart)
+                        // Until it has been measured once there is no telling which
+                        // way it goes; drawing it would show a frame at the wrong end.
+                        .alpha(if (popoverHeight > 0) 1f else 0f)
+                        .onGloballyPositioned { popoverHeight = it.size.height }
                         .offset {
-                            val belowStamp = STAMP_DROP.roundToPx()
-                            val y = if (pickerOnSource) {
-                                PLATE_TOP.roundToPx() + belowStamp
+                            val plateTop = if (pickerOnSource) {
+                                PLATE_TOP.roundToPx()
                             } else {
-                                (targetTop - plateAreaTop).roundToInt() + belowStamp
+                                (targetTop - plateAreaTop).roundToInt()
+                            }
+                            val below = plateTop + STAMP_DROP.roundToPx()
+                            val fits = below + popoverHeight <= plateAreaHeight
+                            val y = if (popoverHeight == 0 || fits) {
+                                below
+                            } else {
+                                (plateTop - POPOVER_GAP.roundToPx() - popoverHeight)
+                                    .coerceAtLeast(0)
                             }
                             IntOffset(POPOVER_INSET.roundToPx(), y)
                         },
@@ -222,23 +249,28 @@ fun TranslatorScreen(
 
         Column(Modifier.padding(14.dp)) {
             Slab(state = state, status = status, models = models, viewModel = viewModel)
-            Spacer(Modifier.height(11.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                samples.forEach { sample ->
-                    Chip(
-                        text = sample,
-                        onClick = {
-                            // Reroll as one is taken, so the row is never the same
-                            // three phrases session after session.
-                            sampleRoll++
-                            viewModel.reuse(sample, true, state.target)
-                        },
-                    )
+            // The samples are an offer for an empty input. Once someone is typing
+            // they are answered, and the row is only taking a strip of the little
+            // room the keyboard leaves.
+            if (!imeVisible) {
+                Spacer(Modifier.height(11.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    samples.forEach { sample ->
+                        Chip(
+                            text = sample,
+                            onClick = {
+                                // Reroll as one is taken, so the row is never the same
+                                // three phrases session after session.
+                                sampleRoll++
+                                viewModel.reuse(sample, true, state.target)
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -913,6 +945,11 @@ private fun FirstRunCallout(sizeBytes: Long, modifier: Modifier) {
  * whatever the plate would otherwise be showing. Stacking the header above the text
  * does not fit in 76 dp at the full reading size, and squeezing it in is what makes
  * the plate look broken rather than compact.
+ *
+ * The strip exists only while the keyboard is up, so tapping it puts the keyboard
+ * away and gives the plate back its full size — the result is what someone reaching
+ * for it wants to read, and it is the one thing on screen the keyboard is covering.
+ * The pair stamp inside keeps its own tap: a child is hit first.
  */
 @Composable
 private fun CollapsedStrip(
@@ -925,8 +962,13 @@ private fun CollapsedStrip(
     leading: (@Composable () -> Unit)? = null,
     text: @Composable () -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     Plate(
-        modifier = modifier,
+        modifier = modifier.tap {
+            focusManager.clearFocus()
+            keyboard?.hide()
+        },
         background = background,
         contentColor = contentColor,
         border = border,
