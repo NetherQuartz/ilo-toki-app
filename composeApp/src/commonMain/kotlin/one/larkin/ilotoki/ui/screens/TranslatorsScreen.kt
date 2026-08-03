@@ -12,9 +12,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,8 +32,11 @@ import one.larkin.ilotoki.model.ModelState
 import one.larkin.ilotoki.model.ModelStatus
 import one.larkin.ilotoki.ui.AppText
 import one.larkin.ilotoki.ui.Chip
+import one.larkin.ilotoki.ui.Motion
 import one.larkin.ilotoki.ui.Plate
+import one.larkin.ilotoki.ui.cardIn
 import one.larkin.ilotoki.ui.screenBottomInsets
+import one.larkin.ilotoki.ui.screenIn
 import one.larkin.ilotoki.ui.SignalDot
 import one.larkin.ilotoki.ui.Stamp
 import one.larkin.ilotoki.ui.gibLabel
@@ -59,16 +65,19 @@ fun TranslatorsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .screenIn()
             .screenBottomInsets()
             .verticalScroll(rememberScrollState())
             .padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 14.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp),
     ) {
         StoragePlate(taken = taken, files = files, free = free)
-        models.forEach { model ->
+        models.forEachIndexed { index, model ->
             ModelPlate(
                 model = model,
                 downloading = status is ModelStatus.Downloading && model.selected,
+                // The stack deals itself out rather than landing at once.
+                delayMillis = index * 60,
                 onUse = {
                     val wasOnDevice = model.downloaded
                     viewModel.selectModel(model.spec)
@@ -142,6 +151,7 @@ private fun StoragePlate(taken: Long, files: Int, free: Long) {
 private fun ModelPlate(
     model: ModelState,
     downloading: Boolean,
+    delayMillis: Int,
     onUse: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -172,7 +182,7 @@ private fun ModelPlate(
         else -> colors.ink
     }
 
-    Box(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+    Box(Modifier.fillMaxWidth().cardIn(delayMillis = delayMillis).padding(top = 12.dp)) {
         Plate(
             modifier = Modifier.fillMaxWidth().alpha(if (faded) 0.75f else 1f),
             background = background,
@@ -238,21 +248,34 @@ private fun ModelPlate(
                 }
             }
         }
-        Stamp(
-            text = stamp,
-            modifier = Modifier.align(Alignment.TopEnd).offset(x = (-14).dp, y = (-12).dp),
-            background = when {
+        // The stamp is where a switch shows up — «NOT ON DEVICE» becomes «IN USE» on
+        // the plate you just tapped — so its two colours cross rather than cut.
+        val stampSpec = tween<Color>(Motion.SLOW_COLOUR_MS, easing = Motion.EaseOut)
+        val stampBackground by animateColorAsState(
+            targetValue = when {
                 inUse -> colors.accent
                 newer -> colors.onAccent
                 faded && model.spec.deprecated -> colors.loje
                 else -> colors.paper
             },
-            contentColor = when {
+            animationSpec = stampSpec,
+            label = "stampBackground",
+        )
+        val stampInk by animateColorAsState(
+            targetValue = when {
                 inUse -> colors.onAccent
                 newer -> colors.accent
                 faded && model.spec.deprecated -> colors.onLaso
                 else -> colors.ink
             },
+            animationSpec = stampSpec,
+            label = "stampInk",
+        )
+        Stamp(
+            text = stamp,
+            modifier = Modifier.align(Alignment.TopEnd).offset(x = (-14).dp, y = (-12).dp),
+            background = stampBackground,
+            contentColor = stampInk,
             border = colors.line,
         )
     }

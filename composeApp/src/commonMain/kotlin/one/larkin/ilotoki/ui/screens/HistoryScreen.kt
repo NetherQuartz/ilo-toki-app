@@ -1,5 +1,9 @@
 package one.larkin.ilotoki.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,16 +26,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import one.larkin.ilotoki.MainViewModel
 import one.larkin.ilotoki.data.HistoryEntry
 import one.larkin.ilotoki.data.nowMillis
 import one.larkin.ilotoki.ui.AppText
 import one.larkin.ilotoki.ui.Chip
+import one.larkin.ilotoki.ui.Motion
 import one.larkin.ilotoki.ui.Plate
+import one.larkin.ilotoki.ui.PressSqueeze
+import one.larkin.ilotoki.ui.cardIn
 import one.larkin.ilotoki.ui.screenBottomInsets
+import one.larkin.ilotoki.ui.screenIn
 import one.larkin.ilotoki.ui.Stamp
 import one.larkin.ilotoki.ui.tap
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
@@ -55,17 +66,40 @@ fun HistoryScreen(
     val shown = if (onlyOlin) entries.filter { it.olin } else entries
     val now = remember(entries) { nowMillis() }
 
-    Column(Modifier.fillMaxSize().screenBottomInsets()) {
+    // The stack deals itself out as the screen arrives, and only then. A card
+    // scrolled into view later has not just arrived — it was always there — and
+    // making it wait its turn behind the cards above means a fast scroll shows
+    // blanks where the list should be.
+    var dealing by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        delay(DEAL_WINDOW_MS)
+        dealing = false
+    }
+
+    Column(Modifier.fillMaxSize().screenIn().screenBottomInsets()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // The two filters are one choice, so the fill crosses between them
+            // rather than switching off here and on there.
+            val filterSpec = tween<Color>(Motion.COLOUR_MS, easing = Motion.EaseOut)
+            val allBackground by animateColorAsState(
+                targetValue = if (onlyOlin) Color.Transparent else colors.ink,
+                animationSpec = filterSpec,
+                label = "allBackground",
+            )
+            val allInk by animateColorAsState(
+                targetValue = if (onlyOlin) colors.ink else colors.bg,
+                animationSpec = filterSpec,
+                label = "allInk",
+            )
             Chip(
                 text = "ALL ${entries.size}",
                 onClick = { onlyOlin = false },
-                background = if (onlyOlin) Color.Transparent else colors.ink,
-                contentColor = if (onlyOlin) colors.ink else colors.bg,
+                background = allBackground,
+                contentColor = allInk,
                 style = type.stamp,
                 radius = 999.dp,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -110,7 +144,7 @@ fun HistoryScreen(
                     },
                     style = type.meta.copy(fontSize = 12.5.sp),
                     color = colors.muted,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().cardIn(200),
                     textAlign = TextAlign.Center,
                 )
             }
@@ -125,17 +159,25 @@ fun HistoryScreen(
             // Day separators are part of the list rather than sticky headers: the
             // stack is short and a floating header would fight the plates.
             var lastDay: String? = null
-            shown.forEach { entry ->
+            shown.forEachIndexed { index, entry ->
+                // The stack deals itself out, top first. Capped: past the first few
+                // the delay would be a card scrolled into view sitting there blank.
+                val delay = (index * 35).coerceAtMost(STAGGER_CAP)
                 val day = dayStamp(entry.id, now)
                 if (day != lastDay) {
                     lastDay = day
                     item(key = "day-$day") {
-                        Stamp(text = day, modifier = Modifier.padding(top = 3.dp))
+                        Stamp(
+                            text = day,
+                            modifier = (if (dealing) Modifier.cardIn(delayMillis = delay) else Modifier)
+                                .padding(top = 3.dp),
+                        )
                     }
                 }
                 item(key = entry.id) {
                     HistoryCard(
                         entry = entry,
+                        entrance = if (dealing) Modifier.cardIn(delayMillis = delay + 20) else Modifier,
                         onToggleOlin = { viewModel.toggleOlin(entry.id) },
                         onRemove = { viewModel.removeHistoryEntry(entry.id) },
                         onReuse = {
@@ -152,10 +194,21 @@ fun HistoryScreen(
 @Composable
 private fun OlinFilterChip(count: Int, active: Boolean, onClick: () -> Unit) {
     val colors = IloTokiTheme.colors
+    val spec = tween<Color>(Motion.COLOUR_MS, easing = Motion.EaseOut)
+    val background by animateColorAsState(
+        targetValue = if (active) colors.accent else Color.Transparent,
+        animationSpec = spec,
+        label = "olinFilterBackground",
+    )
+    val ink by animateColorAsState(
+        targetValue = if (active) colors.onAccent else colors.ink,
+        animationSpec = spec,
+        label = "olinFilterInk",
+    )
     Plate(
-        modifier = Modifier.tap(onClick = onClick),
-        background = if (active) colors.accent else Color.Transparent,
-        contentColor = if (active) colors.onAccent else colors.ink,
+        modifier = Modifier.tap(pressScale = PressSqueeze, onClick = onClick),
+        background = background,
+        contentColor = ink,
         radius = 999.dp,
         shadow = 0.dp,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
@@ -176,6 +229,7 @@ private fun OlinFilterChip(count: Int, active: Boolean, onClick: () -> Unit) {
 @Composable
 private fun HistoryCard(
     entry: HistoryEntry,
+    entrance: Modifier,
     onToggleOlin: () -> Unit,
     onRemove: () -> Unit,
     onReuse: () -> Unit,
@@ -183,7 +237,7 @@ private fun HistoryCard(
     val colors = IloTokiTheme.colors
     val type = IloTokiTheme.type
     Plate(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = entrance.fillMaxWidth(),
         radius = 18.dp,
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -208,6 +262,9 @@ private fun HistoryCard(
                         border = if (entry.olin) colors.line else colors.faint,
                         contentColor = if (entry.olin) colors.onAccent else colors.muted,
                         dim = !entry.olin,
+                        // Marking a card is the one thing here that is not undoable
+                        // by scrolling away, so the mark answers with a jump.
+                        popOn = entry.olin,
                     ) {
                         AppText(
                             text = "olin",
@@ -243,6 +300,13 @@ private fun HistoryCard(
     }
 }
 
+/**
+ * The 30 dp square on a card's top edge.
+ *
+ * [popOn] is watched rather than read: whenever it changes — never on the way in —
+ * the square jumps past its own size and comes back, which is how the design
+ * acknowledges a mark that has nowhere else to show up.
+ */
 @Composable
 private fun SmallSquare(
     onClick: () -> Unit,
@@ -250,13 +314,38 @@ private fun SmallSquare(
     border: Color,
     contentColor: Color,
     dim: Boolean,
+    popOn: Any? = null,
     content: @Composable () -> Unit,
 ) {
+    val spec = tween<Color>(Motion.COLOUR_MS, easing = Motion.EaseOut)
+    val fill by animateColorAsState(background, spec, label = "squareFill")
+    val outline by animateColorAsState(border, spec, label = "squareOutline")
+    val ink by animateColorAsState(contentColor, spec, label = "squareInk")
+    val dimming by animateFloatAsState(
+        targetValue = if (dim) 0.6f else 1f,
+        animationSpec = tween(Motion.COLOUR_MS, easing = Motion.EaseOut),
+        label = "squareDim",
+    )
+    val pop = remember { Animatable(1f) }
+    var settled by remember { mutableStateOf(popOn) }
+    LaunchedEffect(popOn) {
+        if (popOn == settled) return@LaunchedEffect
+        settled = popOn
+        pop.animateTo(1.14f, tween(190, easing = Motion.Overshoot))
+        pop.animateTo(1f, tween(200, easing = Motion.Overshoot))
+    }
     Plate(
-        modifier = Modifier.size(30.dp).tap(onClick = onClick).alpha(if (dim) 0.6f else 1f),
-        background = background,
-        contentColor = contentColor,
-        border = border,
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = pop.value
+                scaleY = pop.value
+            }
+            .size(30.dp)
+            .tap(pressScale = 0.9f, onClick = onClick)
+            .alpha(dimming),
+        background = fill,
+        contentColor = ink,
+        border = outline,
         radius = 9.dp,
         shadow = 0.dp,
         contentPadding = PaddingValues(0.dp),
@@ -264,6 +353,12 @@ private fun SmallSquare(
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
     }
 }
+
+/** Past this many milliseconds a card would just be sitting there empty. */
+private const val STAGGER_CAP = 280
+
+/** After this, the screen has arrived and a card appearing is a scroll, not a deal. */
+private const val DEAL_WINDOW_MS = 600L
 
 /**
  * «TODAY», «YESTERDAY» or the date, in the local calendar.

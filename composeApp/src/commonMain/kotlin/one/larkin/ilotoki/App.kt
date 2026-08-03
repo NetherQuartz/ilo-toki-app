@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,9 +19,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import one.larkin.ilotoki.model.DownloadProgress
 import one.larkin.ilotoki.model.ModelCatalog
 import one.larkin.ilotoki.model.ModelStatus
@@ -29,13 +32,20 @@ import one.larkin.ilotoki.ui.BackSquare
 import one.larkin.ilotoki.ui.IconSquare
 import one.larkin.ilotoki.ui.IloTokiIcons
 import one.larkin.ilotoki.ui.MarkTile
+import one.larkin.ilotoki.ui.LocalEntranceSuppressed
 import one.larkin.ilotoki.ui.ProgressLine
+import one.larkin.ilotoki.ui.peeledBack
+import one.larkin.ilotoki.ui.revealedBack
+import one.larkin.ilotoki.ui.screenIn
 import one.larkin.ilotoki.ui.screens.AboutOverlay
 import one.larkin.ilotoki.ui.screens.HistoryScreen
 import one.larkin.ilotoki.ui.screens.SettingsScreen
 import one.larkin.ilotoki.ui.screens.TranslatorScreen
 import one.larkin.ilotoki.ui.screens.TranslatorsScreen
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
+
+/** Long enough for a screen's entrance to be over before the next one is built. */
+private const val PRELOAD_DELAY_MS = 300L
 
 /**
  * The four places in the app. Deliberately not a navigation library: there is one
@@ -64,6 +74,9 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
 
         var screen by remember { mutableStateOf(Screen.Translator) }
         var aboutOpen by remember { mutableStateOf(false) }
+        // A screen the back gesture has already been showing must not make its
+        // entrance a second time when it becomes the screen for real.
+        var arrivedByGesture by remember { mutableStateOf(false) }
 
         val goBack = {
             when {
@@ -72,13 +85,48 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                 else -> screen = Screen.Translator
             }
         }
-        PlatformBackHandler(enabled = aboutOpen || screen != Screen.Translator, onBack = goBack)
+
+        // What a back gesture would uncover. Null for the about card: the screen it
+        // sits on is already drawn under it, so there is nothing to add behind.
+        val behind = when {
+            aboutOpen -> null
+            screen == Screen.Models -> Screen.Settings
+            screen != Screen.Translator -> Screen.Translator
+            else -> null
+        }
+
+        val back = rememberBackGesture(
+            enabled = aboutOpen || screen != Screen.Translator,
+            // The about card is what back is dismissing, not a screen it is
+            // leaving: it has nothing behind it to preview, so it just goes.
+            previewed = !aboutOpen,
+        ) {
+            arrivedByGesture = true
+            goBack()
+        }
+        LaunchedEffect(screen, aboutOpen) { arrivedByGesture = false }
+
+        // The same screen, once the one on top has stopped arriving. Waiting is the
+        // point: composing it is the expensive part, and it has to happen where
+        // nothing is moving — during the entrance it would be just as visible as
+        // during the gesture it is there to pay for.
+        var readyBehind by remember { mutableStateOf<Screen?>(null) }
+        LaunchedEffect(behind) {
+            readyBehind = null
+            if (behind != null) {
+                delay(PRELOAD_DELAY_MS)
+                readyBehind = behind
+            }
+        }
 
         val colors = IloTokiTheme.colors
-        Box(Modifier.fillMaxSize().background(colors.bg)) {
+        // One screen and everything framing it. Taken as a lambda rather than a
+        // composable of its own so that drawing the back gesture's destination is a
+        // second call and not a second copy of eleven arguments.
+        val frame: @Composable (Screen) -> Unit = { shown ->
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Header(
-                    screen = screen,
+                    screen = shown,
                     // The dot is the one thing allowed to ask for attention, so it
                     // means both kinds of «you need to go to settings»: nothing to
                     // translate with, or something better to translate with.
@@ -94,11 +142,14 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                 if (status is ModelStatus.Downloading) {
                     ProgressLine(
                         fraction = status.progress.fractionOrZero(),
-                        modifier = Modifier.padding(horizontal = 14.dp).padding(bottom = 4.dp),
+                        modifier = Modifier
+                            .screenIn(180)
+                            .padding(horizontal = 14.dp)
+                            .padding(bottom = 4.dp),
                     )
                 }
 
-                when (screen) {
+                when (shown) {
                     Screen.Translator -> TranslatorScreen(
                         state = state,
                         status = status,
@@ -132,14 +183,80 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                     )
                 }
             }
+        }
 
-            if (aboutOpen) {
-                AboutOverlay(
-                    model = models.firstOrNull { it.selected }?.spec ?: ModelCatalog.default,
-                    onDismiss = { aboutOpen = false },
-                )
+        CompositionLocalProvider(LocalEntranceSuppressed provides arrivedByGesture) {
+            Box(Modifier.fillMaxSize().background(colors.bg)) {
+                // The destination, under the screen being peeled away and a little
+                // under its own size until that screen has gone.
+                //
+                // It is composed *before* the gesture rather than during it. A whole
+                // screen takes longer to compose than a frame lasts — measured on a
+                // Pixel 6, building it inside the gesture janked a third of the
+                // frames and put the 90th percentile at 85 ms, against 13 ms with
+                // nothing to build — and a quick flick is over in six frames, so
+                // there is nowhere in it to hide that. Built quietly a moment after
+                // the screen settles instead, it is only drawn when a gesture is
+                // actually in flight.
+                val under = if (back.inFlight) behind else readyBehind
+                if (under != null) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .revealedBack { back.exiting }
+                            .drawWithContent { if (back.inFlight) drawContent() },
+                    ) {
+                        frame(under)
+                    }
+                }
+
+                PeeledScreen(back, peeling = !aboutOpen) { frame(screen) }
+
+                if (aboutOpen) {
+                    AboutOverlay(
+                        model = models.firstOrNull { it.selected }?.spec
+                            ?: ModelCatalog.default,
+                        // Dragging back takes the card away rather than the screen:
+                        // it is what the gesture is dismissing.
+                        onDismiss = { aboutOpen = false },
+                    )
+                }
             }
         }
+    }
+}
+
+/**
+ * The screen, wrapped so that a back drag peels it.
+ *
+ * Nothing here reads the gesture's progress: it is handed to the peel as a lambda
+ * and read at draw time. A screen is an expensive thing to recompose and there are
+ * two of them on stage during a gesture.
+ */
+@Composable
+private fun PeeledScreen(
+    back: BackGesture,
+    peeling: Boolean,
+    content: @Composable () -> Unit,
+) {
+    // Gated on the flight and not only on the values: they are put back to zero
+    // after the swap, and a frame that caught them half-reset would peel the screen
+    // that has just arrived. `inFlight` changes twice a gesture, so reading it here
+    // costs nothing.
+    val live = peeling && back.inFlight
+    Box(
+        // Its own background, inside the peel so it is scaled and rounded with it:
+        // the screen has to be opaque or the one being uncovered shows *through*
+        // it rather than out from behind it, and both are legible at once.
+        Modifier
+            .fillMaxSize()
+            .peeledBack(
+                progress = { if (live) back.progress else 0f },
+                exiting = { if (live) back.exiting else 0f },
+            )
+            .background(IloTokiTheme.colors.bg),
+    ) {
+        content()
     }
 }
 
@@ -174,13 +291,6 @@ private fun Header(
         }
     }
 }
-
-/**
- * The system back gesture. Android has a hardware/gesture back that would
- * otherwise leave the app from a subscreen; iOS has the edge swipe.
- */
-@Composable
-expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
 
 /** A server that does not report a length leaves the line empty rather than lying. */
 internal fun DownloadProgress.fractionOrZero(): Float =
