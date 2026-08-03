@@ -27,6 +27,8 @@ import one.larkin.ilotoki.ui.AppText
 import one.larkin.ilotoki.ui.Chip
 import one.larkin.ilotoki.ui.MarkTile
 import one.larkin.ilotoki.ui.Plate
+import one.larkin.ilotoki.ui.cardDrop
+import one.larkin.ilotoki.ui.fadeIn
 import one.larkin.ilotoki.ui.tap
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
 
@@ -36,6 +38,11 @@ private const val TOKI_PONA_URL = "https://tokipona.org"
 /**
  * About, as a card over the screen rather than a screen of its own — it is the one
  * place in the app with nothing to do, so it should be dismissable in one tap.
+ *
+ * It does not answer the back gesture with any movement of its own. Back here means
+ * «close this», and a card that slides about under the thumb before closing is
+ * asking to be read as going somewhere, which it is not — see `previewed` on
+ * [one.larkin.ilotoki.rememberBackGesture].
  */
 @Composable
 fun AboutOverlay(model: ModelSpec, onDismiss: () -> Unit) {
@@ -48,11 +55,16 @@ fun AboutOverlay(model: ModelSpec, onDismiss: () -> Unit) {
             Modifier
                 .fillMaxSize()
                 .padding(top = 58.dp)
+                .fadeIn(170)
                 .background(Color(0xFF14130F).copy(alpha = 0.42f))
                 .tap(onClick = onDismiss),
         )
+        // It comes down from behind the header, where the mark that opened it is.
         Plate(
-            modifier = Modifier.fillMaxWidth().padding(start = 19.dp, end = 19.dp, top = 66.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .cardDrop()
+                .padding(start = 19.dp, end = 19.dp, top = 66.dp),
             shadow = 5.dp,
             contentPadding = PaddingValues(16.dp),
         ) {
@@ -71,7 +83,7 @@ fun AboutOverlay(model: ModelSpec, onDismiss: () -> Unit) {
                         )
                     }
                     Plate(
-                        modifier = Modifier.size(30.dp).tap(onClick = onDismiss),
+                        modifier = Modifier.size(30.dp).tap(pressScale = 0.9f, onClick = onDismiss),
                         background = Color.Transparent,
                         radius = 9.dp,
                         shadow = 0.dp,

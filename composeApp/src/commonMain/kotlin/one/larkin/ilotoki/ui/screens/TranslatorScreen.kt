@@ -1,10 +1,14 @@
 package one.larkin.ilotoki.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -20,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
@@ -36,6 +41,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,9 +51,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
@@ -55,12 +65,15 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -80,8 +93,18 @@ import one.larkin.ilotoki.model.ModelStatus
 import one.larkin.ilotoki.ui.AppText
 import one.larkin.ilotoki.ui.Chip
 import one.larkin.ilotoki.ui.IloTokiIcons
+import one.larkin.ilotoki.ui.Motion
 import one.larkin.ilotoki.ui.Plate
+import one.larkin.ilotoki.ui.PressSqueeze
+import one.larkin.ilotoki.ui.animatedProgress
+import one.larkin.ilotoki.ui.cardIn
+import one.larkin.ilotoki.ui.fadeIn
+import one.larkin.ilotoki.ui.nudge
+import one.larkin.ilotoki.ui.plateIn
+import one.larkin.ilotoki.ui.popIn
 import one.larkin.ilotoki.ui.screenBottomInsets
+import one.larkin.ilotoki.ui.screenIn
+import one.larkin.ilotoki.ui.stampIn
 import one.larkin.ilotoki.ui.Stamp
 import one.larkin.ilotoki.ui.VectorIcon
 import one.larkin.ilotoki.ui.formatGiB
@@ -105,6 +128,29 @@ private val POPOVER_INSET = 22.dp
 /** Gap left between the popover and the plate it flips above. */
 private val POPOVER_GAP = 8.dp
 
+/** The seam between the plates, which the swap knob overhangs. */
+private val SEAM = 14.dp
+
+/** What the target plate keeps for itself once the keyboard has the rest. */
+private val COLLAPSED_HEIGHT = 76.dp
+
+/** Below this it wears the strip; above it, the full stack. */
+private val COLLAPSED_CONTENT_LIMIT = 120.dp
+
+/**
+ * What the input keeps for itself once the keyboard is up.
+ *
+ * It is the input that is being used at that moment, so it gets the room and the
+ * target plate takes what is left, down to its strip. The value has to sit between
+ * two bounds: at or below half the area, or the plate would jump the moment the
+ * keyboard is announced instead of travelling; and at or above what a keyboard
+ * leaves less 76 dp, or the plate never reaches the strip at all. On a phone that
+ * is a wide window and 300 dp sits in it; where a keyboard is small enough that no
+ * value satisfies both, the plate simply stops short of the strip, which is right —
+ * the strip exists because the keyboard takes the screen, and a small one does not.
+ */
+private val SOURCE_MIN = 300.dp
+
 /**
  * The main screen: source plate, target plate, the knob on the seam, the slab.
  *
@@ -125,7 +171,51 @@ fun TranslatorScreen(
 
     // With the keyboard up the target plate gives up its space to the input and
     // keeps only enough to show the last result on one line.
-    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    //
+    // The insets object is taken here; the *value* is read in the measure blocks
+    // below, never at composition. That is the difference between this screen being
+    // rebuilt sixty times a second while a keyboard travels and it merely being
+    // measured again — and the plate area used to be a `BoxWithConstraints`, whose
+    // every re-measure is a subcomposition of everything inside it. Measured on a
+    // Pixel 6: 22 ms a frame that way, 9 ms this way.
+    val imeInsets = WindowInsets.ime
+    val navigationInsets = WindowInsets.navigationBars
+
+    // How far up the keyboard is, as a fraction — the same movement the plates ride
+    // through the space they are left with, in a form the things *below* them can
+    // ride too. Its own height is the only thing missing to compute it, and the
+    // keyboard is the only one who knows that, so it is remembered from the deepest
+    // squeeze seen. Before there is one — the first time a keyboard opens in a
+    // session — this falls back to «up or not», which is what everything used to do.
+    //
+    // What counts is the squeeze, not the inset: the screen's bottom padding is
+    // `navigationBars ∪ ime`, so the last stretch of the keyboard's travel — the
+    // part still inside the gesture bar's own height — moves nothing. Measured from
+    // the raw inset instead, the chips were still unfolding through that stretch and
+    // taking their space back off the plates *after* the plates had finished
+    // growing, which is the top block growing and then shrinking again.
+    //
+    // Kept in a plain array rather than in state: it is written and read inside the
+    // measure blocks, and as state every frame of the keyboard's travel would write
+    // it and invite a recomposition of this whole screen.
+    val imeFull = remember { IntArray(1) }
+    val squeeze = { density: Density ->
+        (imeInsets.getBottom(density) - navigationInsets.getBottom(density)).coerceAtLeast(0)
+    }
+    val imeFraction = { density: Density ->
+        val bottom = squeeze(density)
+        if (bottom > imeFull[0]) imeFull[0] = bottom
+        when {
+            imeFull[0] > 0 -> (bottom.toFloat() / imeFull[0]).coerceIn(0f, 1f)
+            bottom > 0 -> 1f
+            else -> 0f
+        }
+    }
+
+    // Which of its two forms the target plate is wearing. It is decided where the
+    // height is — in measure — and put back here, so it changes once each way rather
+    // than being asked every frame.
+    var collapsed by remember { mutableStateOf(false) }
 
     // Only one of the two sides has a language to choose, and it is never the toki
     // pona one — that side of the pair is the whole point of the app. So the picker
@@ -149,7 +239,7 @@ fun TranslatorScreen(
     var sampleRoll by remember { mutableIntStateOf(0) }
     val samples = remember(sampleRoll) { SamplePhrases.pick(SAMPLE_COUNT) }
 
-    Column(Modifier.fillMaxSize().screenBottomInsets()) {
+    Column(Modifier.fillMaxSize().screenIn().screenBottomInsets()) {
         Box(
             Modifier
                 .weight(1f)
@@ -166,12 +256,13 @@ fun TranslatorScreen(
                     state = state,
                     viewModel = viewModel,
                     onPickLanguage = if (pickerOnSource) togglePicker else null,
+                    pickerOpen = languagesOpen,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
                 // The seam. The knob is taller than the gap and overflows it on
                 // purpose — that overlap is what makes it read as a hinge, which
                 // only works if it draws over both plates rather than under them.
-                Box(Modifier.fillMaxWidth().height(14.dp).zIndex(1f)) {
+                Box(Modifier.fillMaxWidth().height(SEAM).zIndex(1f)) {
                     SwapKnob(
                         onClick = viewModel::swapDirection,
                         modifier = Modifier.align(Alignment.CenterEnd).offset(x = (-12).dp),
@@ -184,14 +275,43 @@ fun TranslatorScreen(
                     viewModel = viewModel,
                     onOpenModels = onOpenModels,
                     onPickLanguage = if (pickerOnSource) null else togglePicker,
-                    modifier = (
-                        if (imeVisible) {
-                            Modifier.height(76.dp).fillMaxWidth()
-                        } else {
-                            Modifier.weight(1f).fillMaxWidth()
+                    pickerOpen = languagesOpen,
+                    // The target plate gives up its half to the keyboard rather than
+                    // being swapped for a strip: both states are a height, so the
+                    // plate travels between them instead of jumping. The source plate
+                    // keeps its weight and takes back whatever this one leaves.
+                    //
+                    // The height is a function of the room there is, worked out here
+                    // in measure — that area is already being squeezed by the ime
+                    // inset frame by frame, so reading it is exact synchronisation
+                    // for free. A tween cannot be: «is the keyboard up» only goes
+                    // false once the keyboard has *finished* leaving, and the plate
+                    // would grow back after it rather than with it.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .layout { measurable, constraints ->
+                            val open = constraints.maxHeight
+                            val height = if (squeeze(this) > 0) {
+                                (open - SOURCE_MIN.roundToPx()).coerceIn(
+                                    COLLAPSED_HEIGHT.roundToPx(),
+                                    open / 2,
+                                )
+                            } else {
+                                open / 2
+                            }
+                            // The contents change over at a size where they still
+                            // fit, rather than at the moment the keyboard is
+                            // announced: a stacked column in a 76 dp box is clipped
+                            // mid-line, which is the whole reason the strip exists.
+                            val wanted = height < COLLAPSED_CONTENT_LIMIT.roundToPx()
+                            if (wanted != collapsed) collapsed = wanted
+                            val placeable = measurable.measure(
+                                constraints.copy(minHeight = height, maxHeight = height),
+                            )
+                            layout(placeable.width, height) { placeable.place(0, 0) }
                         }
-                        ).onGloballyPositioned { targetTop = it.positionInRoot().y },
-                    collapsed = imeVisible,
+                        .onGloballyPositioned { targetTop = it.positionInRoot().y },
+                    collapsed = collapsed,
                 )
             }
 
@@ -200,7 +320,7 @@ fun TranslatorScreen(
             if (models.isNotEmpty() && models.none { it.downloaded }) {
                 FirstRunCallout(
                     sizeBytes = models.selectedSpec().sizeBytes,
-                    modifier = Modifier.align(Alignment.TopEnd).zIndex(2f),
+                    modifier = Modifier.align(Alignment.TopEnd).zIndex(2f).nudge(),
                 )
             }
 
@@ -223,9 +343,6 @@ fun TranslatorScreen(
                     modifier = Modifier
                         .zIndex(6f)
                         .align(Alignment.TopStart)
-                        // Until it has been measured once there is no telling which
-                        // way it goes; drawing it would show a frame at the wrong end.
-                        .alpha(if (popoverHeight > 0) 1f else 0f)
                         .onGloballyPositioned { popoverHeight = it.size.height }
                         .offset {
                             val plateTop = if (pickerOnSource) {
@@ -242,7 +359,15 @@ fun TranslatorScreen(
                                     .coerceAtLeast(0)
                             }
                             IntOffset(POPOVER_INSET.roundToPx(), y)
-                        },
+                        }
+                        // Last in the chain, so the entrance transforms the popover
+                        // itself and not a node whose placement is still deferred:
+                        // above the `offset`, the layer drew nowhere on iOS and the
+                        // list simply turned up when the tween ended. It also waits
+                        // for the measurement above rather than being hidden through
+                        // it — the entrance is 140 ms, and an `alpha(0f)` guard over
+                        // the top would eat most of it.
+                        .popIn(enabled = popoverHeight > 0),
                 )
             }
         }
@@ -252,7 +377,27 @@ fun TranslatorScreen(
             // The samples are an offer for an empty input. Once someone is typing
             // they are answered, and the row is only taking a strip of the little
             // room the keyboard leaves.
-            if (!imeVisible) {
+            //
+            // It folds on the keyboard's own fraction rather than on a tween of its
+            // own, because a tween can only start when «is the keyboard up» flips —
+            // which on the way down is when the keyboard has already *finished*
+            // leaving. That is one movement of the plates followed by a second one
+            // down here, and the two should be one.
+            // Both the fold and the fade read that fraction where they are applied —
+            // in measure and in draw — so the keyboard's whole travel costs this
+            // screen no recompositions at all.
+            Column(
+                Modifier
+                    .clipToBounds()
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        val height = (placeable.height * (1f - imeFraction(this)))
+                            .roundToInt()
+                            .coerceAtLeast(0)
+                        layout(placeable.width, height) { placeable.place(0, 0) }
+                    }
+                    .graphicsLayer { alpha = 1f - imeFraction(this) },
+            ) {
                 Spacer(Modifier.height(11.dp))
                 Row(
                     modifier = Modifier
@@ -263,9 +408,10 @@ fun TranslatorScreen(
                     samples.forEach { sample ->
                         Chip(
                             text = sample,
+                            modifier = Modifier.cardIn(220),
                             onClick = {
-                                // Reroll as one is taken, so the row is never the same
-                                // three phrases session after session.
+                                // Reroll as one is taken, so the row is never the
+                                // same three phrases session after session.
                                 sampleRoll++
                                 viewModel.reuse(sample, true, state.target)
                             },
@@ -282,6 +428,8 @@ fun TranslatorScreen(
  *
  * [onPick] is null on the toki pona side — there is nothing to choose there — and
  * that is what decides whether the stamp carries the caret and reacts to a tap.
+ * The caret turns over while the list is open, so the stamp says which way the
+ * next tap goes without a second control.
  */
 @Composable
 private fun PairStamp(
@@ -289,20 +437,41 @@ private fun PairStamp(
     other: Language,
     onAccentPlate: Boolean,
     onPick: (() -> Unit)?,
+    pickerOpen: Boolean = false,
 ) {
     val colors = IloTokiTheme.colors
     val background = if (onAccentPlate) colors.onAccent else colors.ink
     val content = if (onAccentPlate) colors.accent else colors.bg
+    val caret = animateFloatAsState(
+        targetValue = if (pickerOpen) 180f else 0f,
+        animationSpec = tween(160, easing = Motion.Out),
+        label = "caret",
+    )
     Stamp(
         text = (if (isTokiPona) TOKI_PONA else other.displayName).uppercase(),
-        modifier = if (onPick != null) Modifier.tap(onClick = onPick) else Modifier,
+        modifier = Modifier
+            .stampIn()
+            .then(
+                if (onPick != null) {
+                    Modifier.tap(pressScale = PressSqueeze, onClick = onPick)
+                } else {
+                    Modifier
+                },
+            ),
         background = background,
         contentColor = content,
         glyph = if (isTokiPona) "toki" else null,
         trailing = if (onPick == null) {
             null
         } else {
-            { AppText("▾", IloTokiTheme.type.stamp, color = content) }
+            {
+                AppText(
+                    text = "▾",
+                    style = IloTokiTheme.type.stamp,
+                    modifier = Modifier.graphicsLayer { rotationZ = caret.value },
+                    color = content,
+                )
+            }
         },
     )
 }
@@ -312,6 +481,7 @@ private fun SourcePlate(
     state: TranslatorState,
     viewModel: MainViewModel,
     onPickLanguage: (() -> Unit)?,
+    pickerOpen: Boolean,
     modifier: Modifier,
 ) {
     val colors = IloTokiTheme.colors
@@ -330,6 +500,7 @@ private fun SourcePlate(
                     other = state.target,
                     onAccentPlate = false,
                     onPick = onPickLanguage,
+                    pickerOpen = pickerOpen,
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -362,6 +533,7 @@ private fun SourcePlate(
                                     "type ${state.target.displayName}…"
                                 },
                                 style = textStyleFor(glyphs),
+                                modifier = Modifier.fadeIn(200),
                                 color = colors.muted,
                             )
                         }
@@ -396,6 +568,7 @@ private fun TargetArea(
     viewModel: MainViewModel,
     onOpenModels: () -> Unit,
     onPickLanguage: (() -> Unit)?,
+    pickerOpen: Boolean,
     modifier: Modifier,
     collapsed: Boolean,
 ) {
@@ -431,6 +604,7 @@ private fun TargetArea(
         state.result.isEmpty() && !state.isTranslating -> EmptyTargetPlate(
             state = state,
             onPickLanguage = onPickLanguage,
+            pickerOpen = pickerOpen,
             modifier = modifier,
             collapsed = collapsed,
         )
@@ -439,6 +613,7 @@ private fun TargetArea(
             state = state,
             viewModel = viewModel,
             onPickLanguage = onPickLanguage,
+            pickerOpen = pickerOpen,
             modifier = modifier,
             collapsed = collapsed,
         )
@@ -450,6 +625,7 @@ private fun ResultPlate(
     state: TranslatorState,
     viewModel: MainViewModel,
     onPickLanguage: (() -> Unit)?,
+    pickerOpen: Boolean,
     modifier: Modifier,
     collapsed: Boolean,
 ) {
@@ -466,6 +642,7 @@ private fun ResultPlate(
             isTokiPona = targetIsTokiPona,
             other = state.target,
             onPickLanguage = onPickLanguage,
+            pickerOpen = pickerOpen,
         ) {
             AppText(
                 text = state.result,
@@ -477,7 +654,11 @@ private fun ResultPlate(
         return
     }
 
-    Plate(modifier = modifier, background = colors.accent, contentColor = colors.onAccent) {
+    Plate(
+        modifier = modifier.plateIn(),
+        background = colors.accent,
+        contentColor = colors.onAccent,
+    ) {
         Column(Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -489,10 +670,12 @@ private fun ResultPlate(
                     other = state.target,
                     onAccentPlate = true,
                     onPick = onPickLanguage,
+                    pickerOpen = pickerOpen,
                 )
                 if (state.isTranslating && state.tokensPerSecond > 0f) {
                     Stamp(
                         text = tokensPerSecondLabel(state.tokensPerSecond),
+                        modifier = Modifier.popIn(160, TransformOrigin.Center),
                         background = colors.onAccent,
                         contentColor = colors.accent,
                     )
@@ -535,7 +718,14 @@ private fun ResultPlate(
     }
 }
 
-/** The result plus the blinking block caret while tokens are still arriving. */
+/**
+ * The result plus the blinking block caret while tokens are still arriving.
+ *
+ * A word comes up out of nothing as it is decoded rather than appearing at full
+ * strength — the design's `tokenIn`. It is done as a span alpha on one string
+ * rather than as a composable per word: the result has to wrap, be selectable and
+ * be laid out as sitelen pona, and a row of separate texts is none of those.
+ */
 @Composable
 private fun StreamingText(
     text: String,
@@ -546,6 +736,15 @@ private fun StreamingText(
     if (!streaming) {
         AppText(text, style)
         return
+    }
+
+    // Where the word being decoded starts. Tokens land inside a word too, so the
+    // fade is keyed to the word rather than restarted on every token.
+    val lastWord = remember(text) { text.trimEnd().lastIndexOf(' ') + 1 }
+    val arriving = remember { Animatable(1f) }
+    LaunchedEffect(lastWord) {
+        arriving.snapTo(0f)
+        arriving.animateTo(1f, tween(Motion.TOKEN_MS, easing = Motion.EaseOut))
     }
 
     val blink = rememberInfiniteTransition(label = "caret")
@@ -568,7 +767,10 @@ private fun StreamingText(
 
     val density = LocalDensity.current
     val annotated = buildAnnotatedString {
-        append(text)
+        append(text.substring(0, lastWord))
+        withStyle(SpanStyle(color = style.color.copy(alpha = arriving.value))) {
+            append(text.substring(lastWord))
+        }
         appendInlineContent(CARET, "▍")
     }
     val caret = mapOf(
@@ -608,6 +810,7 @@ private const val CARET = "caret"
 private fun EmptyTargetPlate(
     state: TranslatorState,
     onPickLanguage: (() -> Unit)?,
+    pickerOpen: Boolean,
     modifier: Modifier,
     collapsed: Boolean,
 ) {
@@ -624,6 +827,7 @@ private fun EmptyTargetPlate(
             isTokiPona = !state.fromTokiPona,
             other = state.target,
             onPickLanguage = onPickLanguage,
+            pickerOpen = pickerOpen,
         ) {
             AppText(
                 text = "translation lands here",
@@ -636,7 +840,7 @@ private fun EmptyTargetPlate(
         return
     }
     Plate(
-        modifier = modifier,
+        modifier = modifier.plateIn(),
         background = Color.Transparent,
         border = colors.faint,
         shadow = 0.dp,
@@ -648,6 +852,7 @@ private fun EmptyTargetPlate(
                 other = state.target,
                 onAccentPlate = false,
                 onPick = onPickLanguage,
+                pickerOpen = pickerOpen,
             )
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -682,7 +887,7 @@ private fun NoTranslatorPlate(model: ModelSpec, modifier: Modifier, collapsed: B
         }
         return
     }
-    Plate(modifier = modifier, background = colors.paper) {
+    Plate(modifier = modifier.plateIn(), background = colors.paper) {
         Column(Modifier.fillMaxSize()) {
             AppText("NO TRANSLATOR YET", type.section, color = colors.muted)
             Spacer(Modifier.height(12.dp))
@@ -728,7 +933,7 @@ private fun DownloadingPlate(
         }
         return
     }
-    Plate(modifier = modifier, background = colors.paper) {
+    Plate(modifier = modifier.plateIn(), background = colors.paper) {
         Column(Modifier.fillMaxSize()) {
             AppText("GETTING THE TRANSLATOR", type.section, color = colors.muted)
             Spacer(Modifier.height(10.dp))
@@ -788,7 +993,7 @@ private fun FailedPlate(
         }
         return
     }
-    Plate(modifier = modifier, background = colors.paper, border = colors.loje) {
+    Plate(modifier = modifier.plateIn(), background = colors.paper, border = colors.loje) {
         Column(Modifier.fillMaxSize()) {
             AppText("THAT DID NOT WORK", type.section, color = colors.loje)
             Spacer(Modifier.height(10.dp))
@@ -851,26 +1056,42 @@ private fun Slab(
     val background = if (slabIsInk) colors.ink else colors.accent
     val content = if (slabIsInk) colors.bg else colors.onAccent
 
+    // The slab is one control that changes what it is — offer, progress, action —
+    // so its two colours cross over rather than cut, and the label changes under a
+    // surface that is already on its way to the new state.
+    val slabBackground by animateColorAsState(
+        targetValue = if (downloading != null) colors.paper else background,
+        animationSpec = tween(Motion.SLOW_COLOUR_MS, easing = Motion.EaseOut),
+        label = "slabBackground",
+    )
+    val slabContent by animateColorAsState(
+        targetValue = if (downloading != null) colors.ink else content,
+        animationSpec = tween(Motion.SLOW_COLOUR_MS, easing = Motion.EaseOut),
+        label = "slabContent",
+    )
+
     Plate(
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
-            .tap(enabled = enabled) {
-                if (ready) viewModel.translate() else viewModel.getTranslator()
-            },
-        background = if (downloading != null) colors.paper else background,
-        contentColor = if (downloading != null) colors.ink else content,
+            .height(58.dp),
+        background = slabBackground,
+        contentColor = slabContent,
         radius = 20.dp,
         // Disabled keeps the shape and loses the shadow — it stays a slab, it just
         // stops looking pressable.
         shadow = if (enabled) 3.dp else 0.dp,
         contentPadding = PaddingValues(0.dp),
         clipContent = true,
+        onClick = if (enabled) {
+            { if (ready) viewModel.translate() else viewModel.getTranslator() }
+        } else {
+            null
+        },
     ) {
         if (downloading != null) {
             Box(
                 Modifier
-                    .fillMaxWidth(downloading.progress.fractionOrZero())
+                    .fillMaxWidth(animatedProgress(downloading.progress.fractionOrZero()))
                     .fillMaxHeight()
                     .background(colors.accent),
             )
@@ -997,6 +1218,7 @@ private fun CollapsedTarget(
     isTokiPona: Boolean,
     other: Language,
     onPickLanguage: (() -> Unit)?,
+    pickerOpen: Boolean,
     border: Color = IloTokiTheme.colors.line,
     shadow: Dp = 3.dp,
     dashed: Boolean = false,
@@ -1014,6 +1236,7 @@ private fun CollapsedTarget(
             other = other,
             onAccentPlate = onAccentPlate,
             onPick = onPickLanguage,
+            pickerOpen = pickerOpen,
         )
     },
     text = text,
@@ -1028,21 +1251,44 @@ private fun collapsedTextStyle(glyphs: Boolean): TextStyle =
         IloTokiTheme.type.body.copy(fontSize = 17.sp, lineHeight = 22.sp)
     }
 
-/** 50 dp accent square on the seam. Flips the direction and the two texts with it. */
+/**
+ * 50 dp accent square on the seam. Flips the direction and the two texts with it.
+ *
+ * The arrows turn half a circle per tap and keep turning the same way — they carry
+ * the swap rather than illustrate it, which is why the count only ever goes up
+ * instead of alternating between two angles. The curve overshoots and comes back,
+ * the one place in the app that does.
+ */
 @Composable
 private fun SwapKnob(onClick: () -> Unit, modifier: Modifier) {
     val colors = IloTokiTheme.colors
+    var halfTurns by remember { mutableIntStateOf(0) }
+    val angle = animateFloatAsState(
+        targetValue = halfTurns * 180f,
+        animationSpec = tween(340, easing = Motion.Overshoot),
+        label = "swap",
+    )
     Plate(
         // requiredSize, not size: the knob lives in the 14 dp seam between the
         // plates and has to ignore that box's constraints to keep its square.
-        modifier = modifier.requiredSize(50.dp).tap(onClick = onClick),
+        modifier = modifier.requiredSize(50.dp),
         background = colors.accent,
         contentColor = colors.onAccent,
         radius = 15.dp,
         contentPadding = PaddingValues(0.dp),
+        onClick = {
+            halfTurns++
+            onClick()
+        },
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            VectorIcon(IloTokiIcons.SwapVertical, "swap direction", colors.onAccent, 26.dp)
+            VectorIcon(
+                icon = IloTokiIcons.SwapVertical,
+                contentDescription = "swap direction",
+                tint = colors.onAccent,
+                size = 26.dp,
+                modifier = Modifier.graphicsLayer { rotationZ = angle.value },
+            )
         }
     }
 }
@@ -1067,15 +1313,29 @@ private fun ScriptButton(on: Boolean, onAccentPlate: Boolean, onClick: () -> Uni
         onAccentPlate -> colors.accent
         else -> colors.onAccent
     }
+    val borderColor = if (on) {
+        if (onAccentPlate) colors.onAccent else colors.line
+    } else {
+        colors.faint
+    }
+    // Fill, ink, outline and the dimming all cross together: the pill is written in
+    // the script it turns on, so what changes is the same word lighting up.
+    val pillSpec = tween<Color>(170, easing = Motion.EaseOut)
+    val pillBackground by animateColorAsState(background, pillSpec, label = "pillBackground")
+    val pillContent by animateColorAsState(content, pillSpec, label = "pillContent")
+    val pillBorder by animateColorAsState(borderColor, pillSpec, label = "pillBorder")
+    val pillAlpha by animateFloatAsState(
+        targetValue = if (on) 1f else 0.55f,
+        animationSpec = tween(170, easing = Motion.EaseOut),
+        label = "pillAlpha",
+    )
     Plate(
-        modifier = Modifier.tap(onClick = onClick).alpha(if (on) 1f else 0.55f),
-        background = background,
-        contentColor = content,
-        border = if (on) {
-            if (onAccentPlate) colors.onAccent else colors.line
-        } else {
-            colors.faint
-        },
+        modifier = Modifier
+            .tap(pressScale = PressSqueeze, onClick = onClick)
+            .alpha(pillAlpha),
+        background = pillBackground,
+        contentColor = pillContent,
+        border = pillBorder,
         radius = 12.dp,
         shadow = 0.dp,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),

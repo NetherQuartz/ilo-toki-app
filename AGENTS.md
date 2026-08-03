@@ -30,6 +30,19 @@ share a format, even from the same author.
 number. Android Studio's bundled JBR is fine; from a shell:
 `export JAVA_HOME=/Users/vlarkin/Library/Java/JavaVirtualMachines/corretto-21.0.3/Contents/Home`
 
+**The iOS build hits that same trap through Xcode.** `iosApp`'s «Compile Kotlin
+Framework» phase shells out to Gradle, so a build started from a tool that does not
+carry the environment fails with `What went wrong: 26.0.1` and nothing else. Export
+`JAVA_HOME` and drive `xcodebuild` yourself:
+
+```shell
+xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug \
+  -destination "id=<simulator-udid>" -derivedDataPath <dir> build
+```
+
+then `xcrun simctl install`/`launch`. `--console-pty` on the launch is the only way
+to read a `println` out of Kotlin/Native on the simulator.
+
 **Hugging Face transfers wedge on Xet.** Multi-gigabyte downloads stall with an idle
 socket and no error. `export HF_HUB_DISABLE_XET=1` and retry in a loop — plain HTTP
 is slower but finishes, and it drops connections often enough that the retry matters.
@@ -67,8 +80,40 @@ label, big number, buttons — is silently clipped mid-line rather than shrunk. 
 states go through `CollapsedStrip`, one row, one line. Adding a new target state
 means adding its collapsed form in the same change. The strip only exists while the
 keyboard is up, which is why the tap that puts the keyboard away lives on the strip
-itself rather than on each state — and why the sample chips under the slab are not
-composed at all when `imeVisible`.
+itself rather than on each state.
+
+**Do not animate the target plate's height on a tween, and do not key its collapse
+on `imeVisible`.** That boolean only goes false once the keyboard has *finished*
+leaving, so the plate grew back after it rather than with it, and no tween can fix
+being told late. The height is a function of the room there is —
+`(open - SOURCE_MIN).coerceIn(76.dp, open / 2)`, worked out in a `layout {}` from the
+constraints it is handed — and that area is already being squeezed frame by frame by
+the ime inset, so reading it is exact synchronisation for free, on both platforms.
+Read it in the *measure* block and nowhere else: in the composable body it rebuilds
+the whole screen sixty times a second, and while this lived in a `BoxWithConstraints`
+every one of those re-measures was a subcomposition of everything inside it — 22 ms
+a frame on a Pixel 6 against 10 ms now, which is the difference between the resize
+looking like an animation and looking like a slideshow. Which form the plate wears
+is decided in that same block and written back to state, so it changes once each way
+instead of being asked every frame. `SOURCE_MIN` has to sit
+between two bounds, and the comment on it says which; outside them the plate either
+jumps at the start or never reaches the strip. The contents swap over at 120 dp
+rather than at the keyboard's say-so, which is what keeps the stacked column out of
+a box too short for it.
+
+The sample chips under the slab are not in that area and cannot read its height, so
+they fold on the keyboard's own fraction — and they read it in their own `layout {}`
+and `graphicsLayer {}`, for the same reason. That fraction is measured from the
+**squeeze**, `ime.getBottom() - navigationBars.getBottom()`, over the deepest squeeze
+seen; not from the raw inset. The screen's bottom padding is
+`navigationBars ∪ ime`, so the last stretch of the keyboard's travel — the part
+still inside the gesture bar's own height — moves nothing at all. Measured from the
+raw inset the chips were still unfolding through that stretch and taking their space
+back off the plates *after* the plates had finished growing, which is the top block
+growing and then shrinking again at the end of every close. On a tween
+they were a *second* movement: it can only start when «is the keyboard up» flips,
+and on the way down that is after the keyboard has already gone. The very first
+keyboard of a session has no remembered height yet and falls back to the boolean.
 
 **A border drawn behind the content gets painted over.** Several surfaces are
 filled by a *child* that reaches their own edge — the accent growing behind the
@@ -101,6 +146,64 @@ model», it is «no answer yet» — and reading it as the former made the app a
 NO TRANSLATOR YET on every launch. The same for `ModelStatus.Loading`: mapping a
 1.3 GiB file takes about a second, during which the model is very much present.
 Anything that asks «is there a translator» has to exclude both.
+
+**An entrance must be the last modifier in its chain, and must not read its
+animation inside the layer block.** Both bite the same way — the tween runs to
+completion (logged, full duration, on both platforms) while the element stays drawn
+at its first frame, so it turns up in one step at the end and looks like no
+animation at all. Two separate causes:
+
+- Reading inside `Modifier.graphicsLayer { }` defers the read to draw, which is the
+  cheap pattern, but the block is only re-run when the node is re-placed — and a
+  node nothing else moves never is. The entrances read at composition and use the
+  *parameter* overload instead; only the two idle loops defer, and they sit in the
+  normal layout flow where it works.
+- A layer placed *above* a deferred `Modifier.offset { }` drew nowhere at all on
+  iOS. The language popover had `zIndex → align → popIn → offset {}`; moving
+  `popIn` to the end of the chain fixed it. Put the transform on the element, not
+  on a node whose placement is still pending.
+
+Frame-count a new animation before believing it — `adb shell screenrecord` or
+`xcrun simctl io … recordVideo`, `ffmpeg -vf fps=60`, then diff the region frame by
+frame. With `cubic-bezier(.2,.8,.2,1)` a broken animation and a working one both
+look like «it appeared»: the working one is three quarters done in two frames.
+`println` from a `LaunchedEffect` is what separates «the tween never ran» from «the
+tween ran and nothing drew it» — on iOS read it with
+`xcrun simctl launch --console-pty`.
+
+**An entrance hidden behind an `alpha(0f)` guard is an entrance thrown away.** Same
+reason: by the time a one-frame measurement guard lifts, the curve is at 75%. Pass
+the guard into the animation (`popIn(enabled = …)`) so it waits instead.
+
+**A fading element loses its hard shadow, and the cure is per platform.** The
+shadow is painted outside the element's bounds and an offscreen buffer is the size
+of the element, so on Android every entrance dropped its shadow for the whole
+animation and snapped it back on at the end — «тени появляются после всех
+анимаций». `CompositingStrategy.ModulateAlpha` fixes it by applying the alpha per
+draw command instead. On Skia that same strategy stops some filled surfaces being
+drawn at all — the history screen's ALL chip vanished outright — and iOS only loses
+the shadow for about two frames anyway. Hence `entranceCompositing`, expect/actual,
+with the reasoning in its own doc comment. Check a change to it on **both**.
+
+**Per-command alpha also means nothing may hide under anything.** `Modifier.surface`
+used to paint the whole shadow rectangle and then cover most of it with the fill,
+which is invisible until the fill is translucent — and then a near-black rectangle
+comes up through the paper and the plate reads as filling with ink. It now clips
+its own rounded rect out of the shadow (`clipPath(…, ClipOp.Difference)`) and paints
+only the L-shaped band that was ever visible. Anything else drawn behind a fill has
+the same problem waiting.
+
+**A back gesture cannot afford to compose a screen.** It shows two screens at once,
+and building the second one takes longer than a frame: measured on a Pixel 6, a
+third of the gesture's frames janked, the 90th percentile sat at 85 ms and
+`gfxinfo` blamed the UI thread — against 13 ms with a coloured box in its place.
+A quick flick is over in six frames, so there is nowhere in it to hide that. The
+destination is therefore built 300 ms *after* the screen it sits under settles,
+kept composed and simply not drawn (`drawWithContent { if (inFlight) drawContent() }`),
+and the gesture only changes transforms. Everything the gesture animates is read
+through a lambda inside a layer or draw block, never at composition — a screen is
+an expensive thing to recompose sixty times a second. `adb shell dumpsys gfxinfo
+<pkg> reset` before the gesture and reading it after is how any of this was known.
 
 **Do not hand-list llama.cpp sources.** Upstream split every architecture into its
 own translation unit (168 files under `src/`). The Android build delegates to
@@ -157,6 +260,65 @@ merge and format problems that a transformers-only check would not.
   `#0A0906` would render as a faint halo around every plate rather than a shadow. In
   dark it is the 2 dp `line` that separates a plate from the screen. Light keeps its
   shadow; do not "restore" the dark one.
+- **A stack deals itself out once, when the screen arrives.** The history cards'
+  stagger is gated on a 600 ms window from the screen's first frame; after it, a
+  card that scrolls into view gets no entrance at all. Keyed on the index alone it
+  made a fast scroll show blank cards — an item is composed as it scrolls in, and
+  it would then wait out a delay meant for cards that were never on screen.
+- **The motion is the design's, and it lives in one file.**
+  [Motion.kt](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/ui/Motion.kt) holds
+  the three curves and the named entrances (`screenIn`, `plateIn`, `stampIn`,
+  `popIn`, `cardIn`, `cardDrop`, `fadeIn`) plus the two idle loops (`pulse`,
+  `nudge`), transcribed from the handoff's keyframes rather than invented. Nothing
+  eases *in*; `Motion.Overshoot` is only for the swap knob and the olin mark. Press
+  feedback is geometric because this look has no ripple: a pill squeezes
+  (`tap(pressScale = PressSqueeze)`), a shadowed surface falls into its shadow —
+  which is why `Plate` takes an `onClick` of its own, since the shadow is drawn
+  inside it and a `Modifier.tap` in the caller cannot reach it.
+- **The back gesture shows where it is going, and the destination must be opaque.**
+  `rememberBackGesture` ([BackGesture.kt](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/BackGesture.kt))
+  reports the Android drag; while one is in flight `App` composes the destination
+  *behind* the current screen and peels the current one off it. Two things that
+  look like bugs and are not: the peeled screen carries its own background,
+  because both screens are otherwise transparent over the same `bg` and read as one
+  double-exposed screen; and `LocalEntranceSuppressed` is set for the one
+  composition in which the destination becomes the screen, because it has been on
+  display under the thumb for half a second already and playing `screenIn` at that
+  point is a flash. The peel also draws the 2 dp `line` every lifted surface here
+  carries — in dark both screens are the same near-black and the edge is otherwise
+  invisible, which is the same reason plates keep their outline when the shadow is
+  dropped. iOS has no system back; its `actual` returns a gesture that never starts.
+- **The peel always leaves to the right, whichever edge the finger came from.**
+  `BackEventCompat.swipeEdge` is deliberately not read. Mirroring the animation onto
+  the swiping edge looks like the obliging thing to do and is what this had at
+  first; it is wrong, because back means one direction and users read the direction,
+  not the finger. The platform agrees — a right-edge swipe in the settings app moves
+  its page right as well, and only the system's own arrow changes sides.
+- **The back gesture is Android's motion, not this design's.** Two of its curves
+  come from the platform rather than from the handoff, and both were arrived at by
+  recording the settings app's own back and diffing it frame by frame:
+  `Motion.PredictiveBack` for the drag, which front-loads so hard that the screen
+  stops answering the thumb after about a fifth of the pull — that damping is what
+  makes it read as a switch rather than as dragging the screen around — and
+  `Motion.Emphasized` for the commit, the one thing here that eases *in*, because a
+  departure that starts at full speed reads as a cut. The commit is also two halves:
+  the leaving screen fades and finishes its travel while the arriving one grows out
+  of `revealedBack`'s 5% inset, and forgetting the second half is what made the
+  first attempt feel like no animation at all. Measured against the reference: same
+  rise, same peak six frames in, ~320 ms against its ~420. The drag itself is taken
+  from the event as given — **do not smooth it**. A spring on it was tried, on the
+  theory that a stuttering flick was the system reporting progress in jumps; it is
+  not, the stutter was jank (see the note above about composing a screen), and all
+  a spring adds is a screen that keeps moving after the thumb has stopped. Even a
+  stiff one lags a held drag visibly; a soft one lags it by half a second. With the
+  raw value the peel stops when the finger stops, which is what the settings app
+  does when you drag and hold — measured with the same synthetic drag on both.
+- **Back is not always a change of screen, and then it should not animate like one.**
+  The about card gets `previewed = false`, which keeps the gesture and drops the
+  peel: there is nothing behind the card to preview — it is itself what back is
+  dismissing — so sliding it under the thumb only invites the question of where it
+  is going. It also skips the commit animation and closes the moment the gesture is
+  let go, rather than after something has finished moving.
 - **One accent colour, one meaning.** `jelo` marks the target of the translation or
   the active choice, and nothing else. A second accent-filled surface on a screen
   makes both unreadable at a glance.
@@ -217,6 +379,20 @@ merge and format problems that a transformers-only check would not.
   deletion, translation in all three languages both ways. The redesign itself was
   walked through on an iPhone 17 Pro simulator and a Pixel 9 emulator: first run,
   download start/pause/resume, translation, script flip, history, both themes.
+- The animations are in and frame-counted on a Pixel 6, a Pixel 9 emulator and an
+  iPhone 17 Pro simulator: screen and card entrances, the popover, the segmented
+  slide (240 ms), the toggle knob, the press sink (~85 ms), the slab's colour
+  crossing (200 ms), the swap rotation, and both idle loops at their 2.6 s and
+  4.2 s periods. On the simulator also the history stagger, the target plate's
+  `plateIn` and the olin pop, measured at 1.148× and back. The per-word `tokenIn`
+  needs a real device to be visible at all — on a warm simulator a three-word answer
+  lands inside 70 ms and each word's fade is cut short by the next; on the Pixel 6
+  at 1.5 tok/s the last word darkens over nine frames, ≈150 ms of its 170.
+- Predictive back is in on Android, with the destination previewed under the drag.
+  Verified on the Pixel 9 emulator for a committed drag, a cancelled one (the peel
+  runs home in 180 ms) and the about card, which peels while its scrim lifts.
+  A held gesture for a screenshot is `adb shell input motionevent DOWN/MOVE/…`;
+  `input swipe` only ever reaches about a third of the progress before committing.
 - **There is no release signing config.** `assembleRelease` produces
   `composeApp-release-unsigned.apk` and nothing installs it. Test builds so far were
   signed by hand with the *debug* keystore

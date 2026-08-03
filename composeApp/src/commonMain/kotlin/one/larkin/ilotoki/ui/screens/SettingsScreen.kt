@@ -30,9 +30,11 @@ import one.larkin.ilotoki.ui.BorderWidth
 import one.larkin.ilotoki.ui.Chevron
 import one.larkin.ilotoki.ui.Plate
 import one.larkin.ilotoki.ui.screenBottomInsets
+import one.larkin.ilotoki.ui.screenIn
 import one.larkin.ilotoki.ui.SegmentedControl
 import one.larkin.ilotoki.ui.SignalDot
 import one.larkin.ilotoki.ui.Stamp
+import one.larkin.ilotoki.ui.stampIn
 import one.larkin.ilotoki.ui.gibLabel
 import one.larkin.ilotoki.ui.tap
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
@@ -59,6 +61,7 @@ fun SettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .screenIn()
             .screenBottomInsets()
             .verticalScroll(rememberScrollState())
             .padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 14.dp),
@@ -149,11 +152,12 @@ private fun TranslatorsPlate(
 
     Box(Modifier.fillMaxWidth().padding(top = 12.dp)) {
         Plate(
-            modifier = Modifier.fillMaxWidth().tap(onClick = onOpenModels),
+            modifier = Modifier.fillMaxWidth(),
             background = colors.accent,
             contentColor = colors.onAccent,
             radius = 20.dp,
             contentPadding = PaddingValues(14.dp),
+            onClick = onOpenModels,
         ) {
             Column {
                 Row(
@@ -186,7 +190,8 @@ private fun TranslatorsPlate(
                 text = "NEWER AVAILABLE",
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = (-14).dp, y = (-12).dp),
+                    .offset(x = (-14).dp, y = (-12).dp)
+                    .stampIn(240),
                 background = colors.onAccent,
                 contentColor = colors.accent,
                 border = colors.line,
