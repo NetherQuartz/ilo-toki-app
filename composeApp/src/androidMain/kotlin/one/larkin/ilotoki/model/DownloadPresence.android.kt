@@ -31,6 +31,9 @@ private const val LEGACY_CHANNEL_ID = "model-download"
 
 private const val NOTIFICATION_ID = 1
 
+private const val READY_CHANNEL_ID = "translator-ready"
+private const val READY_NOTIFICATION_ID = 2
+
 /**
  * Android freezes a cached process, so without a foreground service backgrounding
  * the app stops the transfer where it stands — no error, no notice, and on coming
@@ -105,6 +108,44 @@ actual fun downloadEnded() {
     runCatching { appContext.stopService(Intent(appContext, ModelDownloadService::class.java)) }
 }
 
+actual fun translatorReady(spec: ModelSpec) {
+    // Nothing to say to someone already looking at it: the plate has just turned
+    // into a translator in front of them, and a notification on top of that is noise.
+    if (currentActivity != null) return
+    ensureReadyChannel()
+    val notification = Notification.Builder(appContext, READY_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setContentTitle("the translator is ready")
+        .setContentText(spec.displayName)
+        .setContentIntent(openAppIntent())
+        // Not ongoing, and gone once it has been used: this one is an event, and
+        // the whole point is that it waits rather than vanishing with the transfer.
+        .setAutoCancel(true)
+        .build()
+    runCatching { notifications.notify(READY_NOTIFICATION_ID, notification) }
+}
+
+private fun ensureReadyChannel() {
+    val channel = NotificationChannel(
+        READY_CHANNEL_ID,
+        "translator ready",
+        // This one may make its sound. A download nobody is watching finishing is
+        // exactly the thing worth a chime, and it happens once per model.
+        NotificationManager.IMPORTANCE_DEFAULT,
+    ).apply {
+        description = "when a downloaded translator is ready to use"
+    }
+    runCatching { notifications.createNotificationChannel(channel) }
+}
+
+private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
+    appContext,
+    0,
+    Intent(appContext, MainActivity::class.java)
+        .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK),
+    PendingIntent.FLAG_IMMUTABLE,
+)
+
 private fun ensureChannel() {
     val channel = NotificationChannel(
         CHANNEL_ID,
@@ -138,14 +179,6 @@ private fun buildDownloadNotification(): Notification {
         gibLabel(progress.downloaded)
     }
 
-    val open = PendingIntent.getActivity(
-        appContext,
-        0,
-        Intent(appContext, MainActivity::class.java)
-            .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK),
-        PendingIntent.FLAG_IMMUTABLE,
-    )
-
     return Notification.Builder(appContext, CHANNEL_ID)
         // The mark alone, laid out for 24 dp — not the launcher's monochrome layer,
         // which carries adaptive-icon padding and would draw a speck.
@@ -159,7 +192,7 @@ private fun buildDownloadNotification(): Notification {
         .setOngoing(true)
         // Otherwise every update re-announces itself on the lock screen.
         .setOnlyAlertOnce(true)
-        .setContentIntent(open)
+        .setContentIntent(openAppIntent())
         .build()
 }
 

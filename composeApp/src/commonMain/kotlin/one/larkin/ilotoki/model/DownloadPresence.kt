@@ -22,3 +22,14 @@ expect fun downloadProgressed(progress: DownloadProgress)
 
 /** The transfer finished, failed or was paused. Always called, exactly once. */
 expect fun downloadEnded()
+
+/**
+ * A model that had to be fetched is now loaded and answering.
+ *
+ * Called only when this run actually downloaded something, so an ordinary launch
+ * is silent, and it is the platform's job to keep quiet when the app is on screen
+ * — someone watching the plate does not need to be told what it already says. The
+ * progress notification takes itself away when the transfer ends, and without this
+ * a download waited out in another app finishes to nothing at all.
+ */
+expect fun translatorReady(spec: ModelSpec)

@@ -303,32 +303,24 @@ object ModelRepository {
         var stalled = 0
         var lastError: Exception? = null
 
-        // Outside the retry loop and in a finally: the platform's hold on the
-        // process has to cover every attempt and be released on all four ways out
-        // — done, given up, cancelled by a pause, or the scope dying.
-        downloadBegan(spec, DownloadProgress(progressed, spec.sizeBytes))
-        try {
-            while (stalled < STALLED_ATTEMPTS_BEFORE_GIVING_UP) {
-                try {
-                    _status.value =
-                        ModelStatus.Downloading(DownloadProgress(progressed, spec.sizeBytes))
-                    downloadModel(http, spec.url, modelFile) { progress ->
-                        _status.value = ModelStatus.Downloading(progress)
-                        downloadProgressed(progress)
-                    }
-                    return
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    lastError = e
-                    val downloaded = partialSizeOf(modelFile)
-                    stalled = if (downloaded > progressed) 0 else stalled + 1
-                    progressed = downloaded
-                    delay(RETRY_DELAY_MILLIS)
+        while (stalled < STALLED_ATTEMPTS_BEFORE_GIVING_UP) {
+            try {
+                _status.value =
+                    ModelStatus.Downloading(DownloadProgress(progressed, spec.sizeBytes))
+                downloadModel(http, spec.url, modelFile) { progress ->
+                    _status.value = ModelStatus.Downloading(progress)
+                    downloadProgressed(progress)
                 }
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastError = e
+                val downloaded = partialSizeOf(modelFile)
+                stalled = if (downloaded > progressed) 0 else stalled + 1
+                progressed = downloaded
+                delay(RETRY_DELAY_MILLIS)
             }
-        } finally {
-            downloadEnded()
         }
 
         throw lastError ?: IllegalStateException("the download failed")
@@ -337,23 +329,46 @@ object ModelRepository {
     private suspend fun prepare() {
         val spec = selected
         val modelFile = fileOf(spec)
+        // Whether this run had to go and get the model, which decides whether
+        // finishing is worth announcing. An ordinary launch loads and says nothing.
+        var fetched = false
 
         if (SystemFileSystem.metadataOrNull(modelFile) == null) {
+            fetched = true
             // Before the transfer, not after: the point is to be usable *during* it.
             loadStandIn()
-            try {
-                download(spec, modelFile)
-                refreshModels()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // The .part file is kept on purpose so a retry resumes instead of
-                // starting the whole transfer over again.
-                _status.value = ModelStatus.Failed(e.message ?: "the download failed")
-                return
-            }
+            // The hold starts here and is released in the finally below, which is
+            // past the *load* rather than past the last byte. Releasing it when the
+            // transfer ended dropped the process back to a cached one while it still
+            // had a 1.3 GiB file to map, and a device short of memory killed it
+            // there: the model was on disk, nothing was loaded, and the notification
+            // that says so never came. What the user is waiting for is a working
+            // translator, so that is what the service has to outlast.
+            downloadBegan(spec, DownloadProgress(partialSizeOf(modelFile), spec.sizeBytes))
         }
 
+        try {
+            if (fetched) {
+                try {
+                    download(spec, modelFile)
+                    refreshModels()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The .part file is kept on purpose so a retry resumes instead of
+                    // starting the whole transfer over again.
+                    _status.value = ModelStatus.Failed(e.message ?: "the download failed")
+                    return
+                }
+            }
+
+            loadPrepared(spec, modelFile, announce = fetched)
+        } finally {
+            if (fetched) downloadEnded()
+        }
+    }
+
+    private suspend fun loadPrepared(spec: ModelSpec, modelFile: Path, announce: Boolean) {
         try {
             _status.value = ModelStatus.Loading
             // Drops the stand-in, if a download just ran with one in place. Two of
@@ -362,6 +377,9 @@ object ModelRepository {
             engine = loadLlmEngine(modelFile.toString(), LlmParams())
             _loaded.value = spec
             _status.value = ModelStatus.Ready
+            // After the load, not after the transfer: «ready» should mean it can
+            // answer, and mapping a 1.3 GiB file takes a second or two more.
+            if (announce) translatorReady(spec)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -68,14 +68,40 @@ process, so a gigabyte transfer running on the app's own coroutine simply stoppe
 no error, no notice, and on coming back the figure had not moved. The cure is a
 foreground service (`ModelDownloadService`, type `dataSync`) whose entire job is to
 exist: it downloads nothing, and being started is what keeps the process out of the
-freezer while `ModelRepository` carries on. The three `DownloadPresence` calls are
-in a `finally` around the whole retry loop, not around one attempt — the loop
-retries a dropped connection several times and the hold has to span all of them and
-be released exactly once, including on the pause path, which cancels the job.
+freezer while `ModelRepository` carries on. The `DownloadPresence` calls bracket
+`prepare()` in a `finally`, not one attempt of the transfer — the loop retries a
+dropped connection several times and the hold has to span all of them and be
+released exactly once, including on the pause path, which cancels the job.
 POST_NOTIFICATIONS is asked for when a download starts rather than at launch, and
 refusing it costs the progress bar, not the transfer. On Android 15 and up
 `dataSync` has a daily budget of a few hours; a model is minutes, so it is not in
 reach — but a longer-running transfer would have to care.
+
+**The hold has to outlast the load, not the last byte.** Releasing it when the
+transfer ended dropped the process straight back to a cached one while it still
+had a 1.3 GiB file to map, and a device short of memory killed it right there:
+the model was on disk, nothing was loaded, and the notification saying so never
+came. Caught on the emulator — `lowmemorykiller ... oom_score_adj 700 ... died:
+prev LAST`, the 700 being the giveaway that it was no longer protected — but the
+same window exists on a real phone under pressure. `downloadBegan`/`downloadEnded`
+therefore bracket the whole of `prepare()` rather than `download()`, and what the
+user is waiting for is a working translator, which is what the service outlasts.
+With that fixed the same emulator still killed it, now at `adj 200` and
+`died: prcp FGS` — protected and killed anyway, because its swap was gone and it
+was thrashing at 302%. That one is the emulator, not the app.
+
+**«Ready» is announced after the load and only when something was fetched.** The
+progress notification takes itself away with the transfer, so a download waited out
+in another app used to finish to nothing at all; `translatorReady` posts a separate,
+tappable, auto-cancelling one on its own channel. It fires after `loadLlmEngine`
+rather than after the last byte, because ready should mean it can answer, and it is
+skipped when an activity is resumed — someone watching the plate turn into a
+translator does not need to be told. An ordinary launch of an already-downloaded
+model says nothing, which is what the `fetched` flag in `prepare()` is for.
+
+To exercise all of this without waiting on a gigabyte, copy a complete `.gguf` to
+`.gguf.part` a few megabytes short and delete the original: the resume finishes in
+seconds and the load and the notification run exactly as they would otherwise.
 
 **«Translates with» is the loaded model, not the selected one.** Picking a
 translator that has to be fetched leaves the previous one loaded and answering for

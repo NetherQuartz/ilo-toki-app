@@ -21,3 +21,5 @@ actual fun downloadBegan(spec: ModelSpec, progress: DownloadProgress) = Unit
 actual fun downloadProgressed(progress: DownloadProgress) = Unit
 
 actual fun downloadEnded() = Unit
+
+actual fun translatorReady(spec: ModelSpec) = Unit
