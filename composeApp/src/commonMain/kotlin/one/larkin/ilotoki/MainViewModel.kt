@@ -39,7 +39,6 @@ data class TranslatorState(
     val useSitelenPona: Boolean = false,
     val isTranslating: Boolean = false,
     /** Live decoding speed, for the stamp on the target plate. Zero when idle. */
-    val tokensPerSecond: Float = 0f,
     val error: String? = null,
 )
 
@@ -151,7 +150,6 @@ class MainViewModel : ViewModel() {
                 query = current.result.ifEmpty { current.query },
                 result = "",
                 isTranslating = false,
-                tokensPerSecond = 0f,
                 error = null,
             )
         }
@@ -169,7 +167,7 @@ class MainViewModel : ViewModel() {
 
         // A second request replaces the first rather than queuing behind it.
         cancelTranslation()
-        _state.update { it.copy(result = "", isTranslating = true, tokensPerSecond = 0f, error = null) }
+        _state.update { it.copy(result = "", isTranslating = true, error = null) }
 
         val prompt = translationPrompt(
             text = current.query,
@@ -182,16 +180,11 @@ class MainViewModel : ViewModel() {
             style = (ModelRepository.loaded.value ?: ModelRepository.selectedSpec()).promptStyle,
         )
         translation = viewModelScope.launch {
-            val started = TimeSource.Monotonic.markNow()
             var pieces = 0
-            var lastTick = started
+            var lastTick = TimeSource.Monotonic.markNow()
             try {
                 engine.generate(prompt).collect { piece ->
                     pieces++
-                    // One piece is one decoded token, so this is the real rate as it
-                    // happens; the engine's own figure is only final once it stops.
-                    val seconds = started.elapsedNow().inWholeMilliseconds / 1000f
-                    val rate = if (seconds > 0f) pieces / seconds else 0f
                     // A tap per token is a texture at the two to eight tokens a
                     // second a phone decodes at, and a buzz above that. The floor
                     // never engages on the hardware this runs on today; it is there
@@ -200,10 +193,9 @@ class MainViewModel : ViewModel() {
                         lastTick = TimeSource.Monotonic.markNow()
                         playHaptic(Haptic.Word)
                     }
-                    _state.update { it.copy(result = it.result + piece, tokensPerSecond = rate) }
+                    _state.update { it.copy(result = it.result + piece) }
                 }
-                val rate = ModelRepository.engineOrNull()?.tokensPerSecond ?: 0f
-                _state.update { it.copy(isTranslating = false, tokensPerSecond = rate) }
+                _state.update { it.copy(isTranslating = false) }
                 if (SettingsRepository.settings.value.keepHistory) {
                     HistoryRepository.record(
                         fromTokiPona = current.fromTokiPona,

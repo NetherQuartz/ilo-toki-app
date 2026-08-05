@@ -111,7 +111,6 @@ import one.larkin.ilotoki.ui.gibLabel
 import one.larkin.ilotoki.ui.tap
 import one.larkin.ilotoki.ui.animateStateColour
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
-import one.larkin.ilotoki.ui.tokensPerSecondLabel
 
 /** How many sample phrases the row under the slab offers. */
 private const val SAMPLE_COUNT = 3
@@ -679,14 +678,6 @@ private fun ResultPlate(
                     onPick = onPickLanguage,
                     pickerOpen = pickerOpen,
                 )
-                if (state.isTranslating && state.tokensPerSecond > 0f) {
-                    Stamp(
-                        text = tokensPerSecondLabel(state.tokensPerSecond),
-                        modifier = Modifier.popIn(160, TransformOrigin.Center),
-                        background = colors.onAccent,
-                        contentColor = colors.accent,
-                    )
-                }
             }
             Spacer(Modifier.height(10.dp))
             // Tapping the text flips the script too — the pill is the discoverable
