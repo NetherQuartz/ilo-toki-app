@@ -421,6 +421,8 @@ fun MarkTile(
     size: Dp = 36.dp,
     radius: Dp = 11.dp,
     markSize: Dp = 23.dp,
+    /** Heavier bars, for the header where the mark stands in a row of icons. */
+    heavy: Boolean = false,
 ) {
     val colors = IloTokiTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -440,7 +442,12 @@ fun MarkTile(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        VectorIcon(IloTokiIcons.Mark, "ilo toki", colors.onAccent, markSize)
+        VectorIcon(
+            icon = if (heavy) IloTokiIcons.MarkHeavy else IloTokiIcons.Mark,
+            contentDescription = "ilo toki",
+            tint = colors.onAccent,
+            size = markSize,
+        )
     }
 }
 

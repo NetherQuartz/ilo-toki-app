@@ -31,12 +31,24 @@ import androidx.compose.ui.unit.dp
  * | clock | 22 dp | 10 | 2.20 dp |
  * | chevron | 18 dp | 12 | 2.16 dp |
  * | swap | 26 dp | 8.5 | 2.21 dp |
- * | mark | 23 dp | 9.5 | 2.19 dp |
+ * | mark, header | 23 dp | 9.5 | 2.19 dp |
+ * | mark, elsewhere | 29 dp | 7 | 2.03 dp |
+ * | close | 14 dp | 15.5 | 2.17 dp |
  */
 object IloTokiIcons {
 
-    /** Bar width of [Mark] on the 100 grid. See its doc comment for what it drives. */
-    private const val MARK_BAR = 9.5f
+    /**
+     * Bar widths of the mark on the 100 grid — see [Mark].
+     *
+     * Two of them, because the weight that reaches the eye is the bar divided by
+     * the grid and multiplied by the size drawn at, so one number cannot serve a
+     * 23 dp tile and a 29 dp one. The header's mark stands in a row with the gear
+     * and the clock and has to match them; the about card's stands alone beside
+     * the wordmark, where the design's original 7 is what looks right.
+     */
+    private const val MARK_BAR = 7f
+
+    private const val MARK_BAR_HEAVY = 9.5f
 
     /**
      * `ilo` box with three `toki` rays. Header, about card, empty-state watermark.
@@ -52,8 +64,12 @@ object IloTokiIcons {
      * `androidMain/res` and do **not** follow this: they are the same silhouette
      * at the original 7, and were deliberately left there.
      */
-    val Mark: ImageVector by lazy {
-        val w = MARK_BAR
+    val Mark: ImageVector by lazy { markOf(MARK_BAR) }
+
+    /** The same figure with heavier bars, for the header tile. See [MARK_BAR]. */
+    val MarkHeavy: ImageVector by lazy { markOf(MARK_BAR_HEAVY) }
+
+    private fun markOf(w: Float): ImageVector =
         ImageVector.Builder(
             name = "mark",
             defaultWidth = 24.dp,
@@ -78,7 +94,6 @@ object IloTokiIcons {
                 path(fill = SolidColor(Color.Black)) { rect(76.5f - w / 2f, 7f, w, 16f) }
             }
         }.build()
-    }
 
     /** Settings. Carries the update dot. */
     val Gear: ImageVector by lazy {
@@ -164,6 +179,27 @@ object IloTokiIcons {
                 moveTo(38f, 22f)
                 lineTo(66f, 50f)
                 lineTo(38f, 78f)
+            }
+        }.build()
+    }
+
+    /** Dismiss. Drawn rather than typed, for the same reason as [Chevron]. */
+    val Close: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "close",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 100f,
+            viewportHeight = 100f,
+        ).apply {
+            path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 15.5f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+            ) {
+                moveTo(27f, 27f); lineTo(73f, 73f)
+                moveTo(73f, 27f); lineTo(27f, 73f)
             }
         }.build()
     }

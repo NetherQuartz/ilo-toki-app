@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -36,12 +38,14 @@ import one.larkin.ilotoki.data.nowMillis
 import one.larkin.ilotoki.ui.AppText
 import one.larkin.ilotoki.ui.Chip
 import one.larkin.ilotoki.ui.Motion
+import one.larkin.ilotoki.ui.IloTokiIcons
 import one.larkin.ilotoki.ui.Plate
 import one.larkin.ilotoki.ui.PressSqueeze
 import one.larkin.ilotoki.ui.cardIn
 import one.larkin.ilotoki.ui.screenBottomInsets
 import one.larkin.ilotoki.ui.screenIn
 import one.larkin.ilotoki.ui.Stamp
+import one.larkin.ilotoki.ui.VectorIcon
 import one.larkin.ilotoki.ui.tap
 import one.larkin.ilotoki.ui.animateStateColour
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
@@ -219,7 +223,14 @@ private fun OlinFilterChip(count: Int, active: Boolean, onClick: () -> Unit) {
         ) {
             AppText(
                 text = "olin",
-                style = IloTokiTheme.type.sitelen.copy(fontSize = 20.sp, lineHeight = 20.sp),
+                // sitelen pona pona ships one weight, so this is a synthetic bold —
+                // the same strokes thickened, which is what puts the glyph at the
+                // weight of the stamps and drawn icons it sits among.
+                style = IloTokiTheme.type.sitelen.copy(
+                    fontSize = 20.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
             )
             AppText("$count", IloTokiTheme.type.stamp)
         }
@@ -268,7 +279,11 @@ private fun HistoryCard(
                     ) {
                         AppText(
                             text = "olin",
-                            style = type.sitelen.copy(fontSize = 21.sp, lineHeight = 21.sp),
+                            style = type.sitelen.copy(
+                                fontSize = 21.sp,
+                                lineHeight = 21.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
                         )
                     }
                     SmallSquare(
@@ -278,7 +293,12 @@ private fun HistoryCard(
                         contentColor = colors.muted,
                         dim = false,
                     ) {
-                        AppText("✕", type.stamp.copy(fontSize = 12.sp, letterSpacing = 0.sp))
+                        VectorIcon(
+                            icon = IloTokiIcons.Close,
+                            contentDescription = "remove",
+                            tint = LocalContentColor.current,
+                            size = 14.dp,
+                        )
                     }
                 }
             }
