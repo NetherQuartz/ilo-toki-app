@@ -162,6 +162,29 @@ private fun pressFraction(interaction: InteractionSource): State<Float> {
 }
 
 /**
+ * The one way anything in this app becomes pressable.
+ *
+ * Every surface here wants the same three things — the shared interaction source
+ * that drives its squeeze or its sink, no indication because this look has no
+ * ripple, and the press tap. Five near-identical `clickable` blocks is how the
+ * logo and the back square ended up silent while everything else answered, so
+ * there is one block now and adding a sixth surface cannot repeat it.
+ */
+private fun Modifier.pressable(
+    interaction: MutableInteractionSource,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier = clickable(
+    interactionSource = interaction,
+    indication = null,
+    enabled = enabled,
+    onClick = {
+        playHaptic(Haptic.Press)
+        onClick()
+    },
+)
+
+/**
  * A press that leaves no ripple — nothing in this design has one.
  *
  * [pressScale] is the squeeze the design gives its pills and stamps while held.
@@ -190,12 +213,7 @@ fun Modifier.tap(
                 }
             },
         )
-        .clickable(
-            interactionSource = interaction,
-            indication = null,
-            enabled = enabled,
-            onClick = { playHaptic(Haptic.Press); onClick() },
-        )
+        .pressable(interaction, enabled, onClick)
 }
 
 /** The distance a pressed surface falls, which is also what its shadow gives up. */
@@ -241,11 +259,7 @@ fun Plate(
                 if (onClick == null) {
                     Modifier
                 } else {
-                    Modifier.clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        onClick = { playHaptic(Haptic.Press); onClick() },
-                    )
+                    Modifier.pressable(interaction, onClick = onClick)
                 },
             )
             .padding(contentPadding),
@@ -343,11 +357,7 @@ fun IconSquare(
                 .fillMaxHeight()
                 .offset(sink, sink)
                 .surface(colors.paper, colors.line, 12.dp, 2.dp * (1f - press), colors.shadow, false)
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    onClick = { playHaptic(Haptic.Press); onClick() },
-                ),
+                .pressable(interaction, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             VectorIcon(icon, contentDescription, colors.ink, iconSize)
@@ -369,7 +379,7 @@ fun BackSquare(onClick: () -> Unit, modifier: Modifier = Modifier) {
             .size(38.dp)
             .offset(sink, sink)
             .surface(colors.paper, colors.line, 12.dp, 2.dp * (1f - press), colors.shadow, false)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            .pressable(interaction, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         VectorIcon(
@@ -425,11 +435,7 @@ fun MarkTile(
                 if (onClick == null) {
                     Modifier
                 } else {
-                    Modifier.clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        onClick = onClick,
-                    )
+                    Modifier.pressable(interaction, onClick = onClick)
                 },
             ),
         contentAlignment = Alignment.Center,
