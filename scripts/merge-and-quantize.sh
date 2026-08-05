@@ -54,12 +54,18 @@ source "$VENV/bin/activate"
 export HF_HUB_DISABLE_XET=1
 
 # Downloads <repo> unless it is already a directory on disk.
+#
+# The cache directory is named after the repo, not after the role it plays. Keying
+# it on «adapter» instead silently reuses whatever was downloaded last time: the
+# second model built on this machine came out byte-identical to the first, and the
+# only sign was that the merge probe printed the same sentence.
 resolve() {
-    local spec="$1" dir="$2"
+    local spec="$1" role="$2"
     if [[ -d "$spec" ]]; then
         echo "$spec"
         return
     fi
+    local dir="$WORK/$role-${spec//\//_}"
     if [[ ! -d "$dir" ]]; then
         echo "==> downloading $spec" >&2
         for attempt in $(seq 1 20); do
@@ -71,8 +77,8 @@ resolve() {
     echo "$dir"
 }
 
-BASE_DIR="$(resolve "$BASE" "$WORK/base")"
-ADAPTER_DIR="$(resolve "$ADAPTER" "$WORK/adapter")"
+BASE_DIR="$(resolve "$BASE" base)"
+ADAPTER_DIR="$(resolve "$ADAPTER" adapter)"
 
 MERGED="$OUT/merged"
 if [[ ! -f "$MERGED/model.safetensors" ]]; then

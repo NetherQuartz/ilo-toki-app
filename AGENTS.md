@@ -370,6 +370,17 @@ submodule update.
 
 ## Workflows
 
+**A second model on the same machine used to come out as the first.** The download
+cache in `merge-and-quantize.sh` was keyed on the *role* — `$WORK/adapter` — so the
+directory left over from the previous run was reused and the new repo was never
+fetched. The build succeeded, the quantizations were the right size and the name on
+the files was the new one; the only signs were that the merge probe printed the
+same sentence as last time and `mean |delta|` on the trained rows matched to the
+last digit. It is keyed on the repo id now, but the general lesson stands: check a
+merge with numbers, not by whether the pipeline exited zero. `scripts/merge_lora.py`
+prints the probe for exactly this reason, and the row/`lm_head` check in the merge
+trap above is what confirms it.
+
 **Producing a model** — base + adapter to the GGUF files the app downloads:
 
 ```shell
