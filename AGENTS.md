@@ -63,6 +63,93 @@ next launch; it now only removes files ending in `.gguf`/`.gguf.part`. Anything 
 stored beside the models is safe, but a sweep that defaults to deleting is not —
 leave that predicate alone.
 
+**Backgrounding the app used to stop the download dead.** Android freezes a cached
+process, so a gigabyte transfer running on the app's own coroutine simply stopped —
+no error, no notice, and on coming back the figure had not moved. The cure is a
+foreground service (`ModelDownloadService`, type `dataSync`) whose entire job is to
+exist: it downloads nothing, and being started is what keeps the process out of the
+freezer while `ModelRepository` carries on. The `DownloadPresence` calls bracket
+`prepare()` in a `finally`, not one attempt of the transfer — the loop retries a
+dropped connection several times and the hold has to span all of them and be
+released exactly once, including on the pause path, which cancels the job.
+POST_NOTIFICATIONS is asked for when a download starts rather than at launch, and
+refusing it costs the progress bar, not the transfer. On Android 15 and up
+`dataSync` has a daily budget of a few hours; a model is minutes, so it is not in
+reach — but a longer-running transfer would have to care.
+
+**The hold has to outlast the load, not the last byte.** Releasing it when the
+transfer ended dropped the process straight back to a cached one while it still
+had a 1.3 GiB file to map, and a device short of memory killed it right there:
+the model was on disk, nothing was loaded, and the notification saying so never
+came. Caught on the emulator — `lowmemorykiller ... oom_score_adj 700 ... died:
+prev LAST`, the 700 being the giveaway that it was no longer protected — but the
+same window exists on a real phone under pressure. `downloadBegan`/`downloadEnded`
+therefore bracket the whole of `prepare()` rather than `download()`, and what the
+user is waiting for is a working translator, which is what the service outlasts.
+With that fixed the same emulator still killed it, now at `adj 200` and
+`died: prcp FGS` — protected and killed anyway, because its swap was gone and it
+was thrashing at 302%. That one is the emulator, not the app.
+
+**«Ready» is announced after the load and only when something was fetched.** The
+progress notification takes itself away with the transfer, so a download waited out
+in another app used to finish to nothing at all; `translatorReady` posts a separate,
+tappable, auto-cancelling one on its own channel. It fires after `loadLlmEngine`
+rather than after the last byte, because ready should mean it can answer, and it is
+skipped when an activity is resumed — someone watching the plate turn into a
+translator does not need to be told. An ordinary launch of an already-downloaded
+model says nothing, which is what the `fetched` flag in `prepare()` is for.
+
+To exercise all of this without waiting on a gigabyte, copy a complete `.gguf` to
+`.gguf.part` a few megabytes short and delete the original: the resume finishes in
+seconds and the load and the notification run exactly as they would otherwise.
+
+**«Translates with» is the loaded model, not the selected one.** Picking a
+translator that has to be fetched leaves the previous one loaded and answering for
+the length of the download, so the about card naming `selectedSpec()` told people
+they were using a model that was still arriving. `ModelRepository.loaded` is the
+one the engine actually holds; anything claiming what does the translating has to
+read that, including the prompt format. The card also changes tense rather than
+name — «will translate with» — because between choosing a model and its arriving
+there are moments when nothing is loaded at all.
+
+**A silent notification has no status bar icon.** From Android 12 a notification
+whose channel sits below `IMPORTANCE_DEFAULT` is kept out of the status bar
+entirely — it appears in the shade under «Silent» and nowhere else. `IMPORTANCE_LOW`
+looks like the considerate choice for a progress bar and costs exactly the thing
+the bar is for: the icon is what says «this is still going» while the app is off
+screen. The channel is `IMPORTANCE_DEFAULT` with `setSound(null, null)` and
+vibration off instead, which is quiet without being invisible; only
+`IMPORTANCE_HIGH` peeks. A channel's importance cannot be raised from code once it
+exists, and recreating one under the same id restores what it had, so moving up
+meant a new id and deleting the old one — see `LEGACY_CHANNEL_ID`.
+
+**The status bar icon is not the launcher's monochrome layer.** That one is laid
+out for a 108 dp adaptive canvas with the mark scaled to 0.58 to clear the round
+mask, so at the 24 dp a status bar gives you it draws a speck in a field of
+nothing. `ic_notification.xml` fits the same 100-grid paths to 24 dp directly:
+the mark spans 90 units tall, so 0.2222 puts it at 20 dp with 2 dp either side.
+
+**A model can be loaded that is not the selected one.** When the chosen translator
+is not on the device, whatever *is* there loads and answers in the meantime —
+otherwise the app is dead for the length of a gigabyte download with a working
+model sitting in its files directory, which is what it did both on a launch whose
+selection named a model that was never fetched and for the whole of a switch.
+Three things follow, and all three were bugs first:
+
+- **The prompt format must come from the loaded model**, never from the selected
+  one. Sending the wrong one does not fail loudly — see the prompt-format trap
+  above. 1.0 and 1.1 happen to share a format, so this would not have shown up
+  until a fine-tune that does not.
+- **`select()` may not return early on «already selected and an engine exists»**.
+  A stand-in fills the engine slot, so that reading made tapping the chosen
+  model's own download button do nothing at all. The condition is «the chosen one
+  is also the one running».
+- **The download only takes the target plate when nothing is loaded.** With a
+  stand-in answering, the plate goes back to translating and the slab carries the
+  progress. The gear's dot and the translators row light through `standingIn`,
+  and that row keeps naming the *chosen* model with a `NOT ON DEVICE` stamp — the
+  same word the translators screen uses — because the row is about the choice.
+
 **Adding a newer catalog entry strands everyone who never chose a model.** There is
 no `selected-model` file until someone picks one on the translators screen, so most
 people are implicitly on `ModelCatalog.default` — and the release that puts a newer
@@ -502,6 +589,19 @@ Open:
   conditional. So «Toki Pona's share of the mix fell from 3:1 to 1:1:1» does not on
   its own explain what regressed; what the evidence points at is the share of pairs
   in which nothing has to be inferred.
+- **iOS still stops its download when the app leaves the screen.** The Android cure
+  does not port: there the same coroutine is kept alive, whereas iOS wants the
+  transfer handed to the system through a background `NSURLSession`, which runs out
+  of process and survives the app being killed. That is a different download rather
+  than the same one held open, so it replaces the ktor path on that platform and
+  has to report progress back through a session delegate — it cannot hide behind
+  the three `DownloadPresence` calls, which is why the iOS actual is an honest
+  no-op with the reasoning in its doc comment. `beginBackgroundTask` was considered
+  and rejected: thirty seconds of grace covers switching apps and coming straight
+  back, which would make the bug look fixed while a gigabyte over a slow connection
+  fails exactly as before. **The simulator cannot verify any of this** — it does not
+  suspend apps the way a device does, so both the bug and its fix are invisible
+  there. Whoever picks this up needs a real iPhone, or the code goes in unproven.
 - The translators screen could offer the other quantizations; the machinery is there,
   it needs entries in the catalog.
 - Swipe-to-delete on a history card is in the spec; the explicit `✕` is what is

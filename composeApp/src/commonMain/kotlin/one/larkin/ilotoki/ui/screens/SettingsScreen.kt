@@ -52,6 +52,7 @@ fun SettingsScreen(
     settings: AppSettings,
     models: List<ModelState>,
     hasUpdate: Boolean,
+    standingIn: Boolean,
     historyCount: Int,
     viewModel: MainViewModel,
     onOpenModels: () -> Unit,
@@ -68,7 +69,7 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(13.dp),
     ) {
         AppearancePlate(settings, viewModel)
-        TranslatorsPlate(models, hasUpdate, onOpenModels)
+        TranslatorsPlate(models, hasUpdate, standingIn, onOpenModels)
         ListPlate(settings, historyCount, viewModel, onOpenHistory, onOpenAbout)
     }
 }
@@ -144,10 +145,14 @@ private fun AppearancePlate(settings: AppSettings, viewModel: MainViewModel) {
 private fun TranslatorsPlate(
     models: List<ModelState>,
     hasUpdate: Boolean,
+    standingIn: Boolean,
     onOpenModels: () -> Unit,
 ) {
     val colors = IloTokiTheme.colors
     val type = IloTokiTheme.type
+    // The chosen translator, even when another is standing in for it while it
+    // downloads — this row is about the choice, and what is actually answering in
+    // the meantime is a detail for the screen it leads to.
     val selected = models.firstOrNull { it.selected }?.spec ?: ModelCatalog.default
 
     Box(Modifier.fillMaxWidth().padding(top = 12.dp)) {
@@ -164,7 +169,7 @@ private fun TranslatorsPlate(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (hasUpdate) SignalDot(size = 11.dp)
+                    if (hasUpdate || standingIn) SignalDot(size = 11.dp)
                     AppText("TRANSLATORS", type.section)
                 }
                 Spacer(Modifier.height(10.dp))
@@ -185,9 +190,16 @@ private fun TranslatorsPlate(
                 }
             }
         }
-        if (hasUpdate) {
+        // Same words the translators screen uses, so the plate and the screen it
+        // opens are saying the same thing about the same model.
+        val stamp = when {
+            hasUpdate -> "NEWER AVAILABLE"
+            standingIn -> "NOT ON DEVICE"
+            else -> null
+        }
+        if (stamp != null) {
             Stamp(
-                text = "NEWER AVAILABLE",
+                text = stamp,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(x = (-14).dp, y = (-12).dp)

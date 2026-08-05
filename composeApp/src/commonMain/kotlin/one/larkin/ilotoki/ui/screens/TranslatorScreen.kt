@@ -164,6 +164,8 @@ fun TranslatorScreen(
     state: TranslatorState,
     status: ModelStatus,
     models: List<ModelState>,
+    /** Whether anything at all can translate right now — see [TargetArea]. */
+    hasTranslator: Boolean,
     viewModel: MainViewModel,
     onOpenModels: () -> Unit,
 ) {
@@ -272,6 +274,7 @@ fun TranslatorScreen(
                     state = state,
                     status = status,
                     models = models,
+                    hasTranslator = hasTranslator,
                     viewModel = viewModel,
                     onOpenModels = onOpenModels,
                     onPickLanguage = if (pickerOnSource) null else togglePicker,
@@ -565,6 +568,7 @@ private fun TargetArea(
     state: TranslatorState,
     status: ModelStatus,
     models: List<ModelState>,
+    hasTranslator: Boolean,
     viewModel: MainViewModel,
     onOpenModels: () -> Unit,
     onPickLanguage: (() -> Unit)?,
@@ -577,7 +581,6 @@ private fun TargetArea(
     // first frame, or while a model that is right there is being loaded, is a lie
     // the user sees on every single launch.
     val scanned = models.isNotEmpty()
-    val haveSelectedFile = models.any { it.selected && it.downloaded }
     when {
         status is ModelStatus.Failed -> FailedPlate(
             message = status.message,
@@ -586,7 +589,11 @@ private fun TargetArea(
             collapsed = collapsed,
         )
 
-        status is ModelStatus.Downloading -> DownloadingPlate(
+        // The download only takes the plate when there is nothing to translate with.
+        // Once a model is loaded — including one standing in while the chosen one
+        // arrives — the plate goes back to its job and the slab below carries the
+        // progress, which is the whole point of being able to work during a fetch.
+        status is ModelStatus.Downloading && !hasTranslator -> DownloadingPlate(
             status = status,
             spec = models.selectedSpec(),
             onPause = viewModel::pauseDownload,
@@ -595,7 +602,7 @@ private fun TargetArea(
             collapsed = collapsed,
         )
 
-        scanned && !haveSelectedFile && status !is ModelStatus.Ready -> NoTranslatorPlate(
+        scanned && !hasTranslator && status !is ModelStatus.Loading -> NoTranslatorPlate(
             model = models.selectedSpec(),
             modifier = modifier,
             collapsed = collapsed,

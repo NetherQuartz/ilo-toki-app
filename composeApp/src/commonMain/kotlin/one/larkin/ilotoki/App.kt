@@ -33,7 +33,6 @@ import one.larkin.ilotoki.ui.IconSquare
 import one.larkin.ilotoki.ui.IloTokiIcons
 import one.larkin.ilotoki.ui.MarkTile
 import one.larkin.ilotoki.ui.LocalEntranceSuppressed
-import one.larkin.ilotoki.ui.ProgressLine
 import one.larkin.ilotoki.ui.peeledBack
 import one.larkin.ilotoki.ui.revealedBack
 import one.larkin.ilotoki.ui.screenIn
@@ -71,6 +70,8 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
         val models by viewModel.models.collectAsStateWithLifecycle()
         val history by viewModel.history.collectAsStateWithLifecycle()
         val hasUpdate by viewModel.hasUpdate.collectAsStateWithLifecycle()
+        val loadedModel by viewModel.loadedModel.collectAsStateWithLifecycle()
+        val standingIn by viewModel.standingIn.collectAsStateWithLifecycle()
 
         var screen by remember { mutableStateOf(Screen.Translator) }
         var aboutOpen by remember { mutableStateOf(false) }
@@ -128,9 +129,10 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                 Header(
                     screen = shown,
                     // The dot is the one thing allowed to ask for attention, so it
-                    // means both kinds of «you need to go to settings»: nothing to
-                    // translate with, or something better to translate with.
-                    showDot = hasUpdate ||
+                    // means every kind of «you need to go to settings»: nothing to
+                    // translate with, something better to translate with, or a
+                    // translator standing in because the chosen one is still coming.
+                    showDot = hasUpdate || standingIn ||
                         (models.isNotEmpty() && models.none { it.downloaded }),
                     onMark = { aboutOpen = true },
                     onBack = goBack,
@@ -139,21 +141,13 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                 )
 
                 val status = modelStatus
-                if (status is ModelStatus.Downloading) {
-                    ProgressLine(
-                        fraction = status.progress.fractionOrZero(),
-                        modifier = Modifier
-                            .screenIn(180)
-                            .padding(horizontal = 14.dp)
-                            .padding(bottom = 4.dp),
-                    )
-                }
 
                 when (shown) {
                     Screen.Translator -> TranslatorScreen(
                         state = state,
                         status = status,
                         models = models,
+                        hasTranslator = loadedModel != null,
                         viewModel = viewModel,
                         onOpenModels = { screen = Screen.Models },
                     )
@@ -162,6 +156,7 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                         settings = settings,
                         models = models,
                         hasUpdate = hasUpdate,
+                        standingIn = standingIn,
                         historyCount = history.size,
                         viewModel = viewModel,
                         onOpenModels = { screen = Screen.Models },
@@ -214,8 +209,13 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
 
                 if (aboutOpen) {
                     AboutOverlay(
-                        model = models.firstOrNull { it.selected }?.spec
+                        // What is loaded when something is, and what is on its way
+                        // when nothing is — the card changes tense rather than
+                        // claiming to translate with a file that is still arriving.
+                        model = loadedModel
+                            ?: models.firstOrNull { it.selected }?.spec
                             ?: ModelCatalog.default,
+                        loaded = loadedModel != null,
                         // Dragging back takes the card away rather than the screen:
                         // it is what the gesture is dismissing.
                         onDismiss = { aboutOpen = false },

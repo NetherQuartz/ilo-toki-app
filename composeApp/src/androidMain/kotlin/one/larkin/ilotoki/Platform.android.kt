@@ -1,9 +1,11 @@
 package one.larkin.ilotoki
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import one.larkin.ilotoki.llm.initLlmBackends
@@ -18,6 +20,16 @@ actual val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 internal lateinit var appContext: Context
     private set
 
+/**
+ * The activity on screen, or null while the app is in the background.
+ *
+ * Only a runtime permission needs it — asking for one has to go through an
+ * activity, and the request is made when a download starts rather than at launch.
+ * Everything else in the app gets by with [appContext].
+ */
+internal var currentActivity: Activity? = null
+    private set
+
 class IloTokiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
@@ -25,6 +37,21 @@ class IloTokiApplication : Application() {
         // ggml picks the CPU backend matching this device; it has to know where the
         // backend libraries were unpacked before any model is loaded.
         initLlmBackends(this)
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) {
+                currentActivity = activity
+            }
+
+            override fun onActivityPaused(activity: Activity) {
+                if (currentActivity === activity) currentActivity = null
+            }
+
+            override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, out: Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) = Unit
+        })
     }
 }
 

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -42,6 +43,7 @@ class MainViewModel : ViewModel() {
 
     val modelStatus = ModelRepository.status
     val models = ModelRepository.models
+    val loadedModel = ModelRepository.loaded
     val settings = SettingsRepository.settings
     val history = HistoryRepository.entries
 
@@ -53,6 +55,19 @@ class MainViewModel : ViewModel() {
     val hasUpdate: StateFlow<Boolean> = models
         .map(::hasNewerThanSelected)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * Something is translating, but it is not the translator that was chosen — the
+     * chosen one is not on the device yet and another is standing in for it.
+     *
+     * It lights the same dot as an update because what to do about it is the same:
+     * go and look at the translators screen. Without it the substitution would be
+     * silent, and «why is it answering like the old one» is a bad thing to have to
+     * work out from the answers.
+     */
+    val standingIn: StateFlow<Boolean> = combine(models, loadedModel) { list, loaded ->
+        loaded != null && list.any { it.selected && it.spec.id != loaded.id }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private var translation: Job? = null
 
@@ -152,7 +167,11 @@ class MainViewModel : ViewModel() {
             text = current.query,
             fromTokiPona = current.fromTokiPona,
             other = current.target,
-            style = ModelRepository.selectedSpec().promptStyle,
+            // The engine's own model, never the selected one: a translator standing
+            // in while its replacement downloads may answer to a different format,
+            // and the wrong one comes back as fluent text in the wrong language
+            // rather than as an error.
+            style = (ModelRepository.loaded.value ?: ModelRepository.selectedSpec()).promptStyle,
         )
         translation = viewModelScope.launch {
             val started = TimeSource.Monotonic.markNow()

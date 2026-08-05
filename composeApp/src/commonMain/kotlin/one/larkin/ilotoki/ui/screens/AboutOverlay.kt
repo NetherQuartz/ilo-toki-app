@@ -44,8 +44,16 @@ private const val TOKI_PONA_URL = "https://tokipona.org"
  * asking to be read as going somewhere, which it is not — see `previewed` on
  * [one.larkin.ilotoki.rememberBackGesture].
  */
+/**
+ * [model] is what the engine holds, and [loaded] says whether it holds it yet.
+ *
+ * The pair matters because the card makes a claim: while a newly picked translator
+ * downloads there is nothing loaded at all — selecting one unloads the previous —
+ * and «translates with» would be naming a file that is two percent of the way to
+ * the device. The tense is the whole difference, so the name and its link stay.
+ */
 @Composable
-fun AboutOverlay(model: ModelSpec, onDismiss: () -> Unit) {
+fun AboutOverlay(model: ModelSpec, loaded: Boolean, onDismiss: () -> Unit) {
     val colors = IloTokiTheme.colors
     val type = IloTokiTheme.type
 
@@ -117,8 +125,8 @@ fun AboutOverlay(model: ModelSpec, onDismiss: () -> Unit) {
                 }
                 Spacer(Modifier.height(12.dp))
                 AppText(
-                    text = "translates with ${model.displayName} on llama.cpp, " +
-                        "on this phone only",
+                    text = "${if (loaded) "translates" else "will translate"} with " +
+                        "${model.displayName} on llama.cpp, on this phone only",
                     style = type.meta.copy(fontSize = 11.5.sp),
                     color = colors.muted,
                 )

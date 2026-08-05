@@ -66,6 +66,16 @@ object ModelRepository {
     private val _models = MutableStateFlow(emptyList<ModelState>())
     val models: StateFlow<List<ModelState>> = _models.asStateFlow()
 
+    /**
+     * The model the engine actually holds, which is not the selected one.
+     *
+     * Selecting a translator that has to be fetched leaves the previous one loaded
+     * and answering for the length of a gigabyte download, so anything claiming
+     * «this is what translates for you» has to name this rather than [selectedSpec].
+     */
+    private val _loaded = MutableStateFlow<ModelSpec?>(null)
+    val loaded: StateFlow<ModelSpec?> = _loaded.asStateFlow()
+
     private var engine: LlmEngine? = null
     private var job: Job? = null
     private var selected: ModelSpec = ModelCatalog.default
@@ -73,7 +83,12 @@ object ModelRepository {
     /** The loaded engine, or null while a model is still being fetched or loaded. */
     fun engineOrNull(): LlmEngine? = engine
 
-    /** The model currently in use, which decides the prompt format. */
+    /**
+     * The model the user has chosen, which is what the download and the translators
+     * screen are about. **Not** the one answering — while a chosen model is still
+     * being fetched another may be standing in for it, so the prompt format has to
+     * come from [loaded] instead. Sending the wrong format does not fail loudly.
+     */
     fun selectedSpec(): ModelSpec = selected
 
     /**
@@ -91,7 +106,7 @@ object ModelRepository {
             selected = readSelection()
             removeUnknownFiles()
             refreshModels()
-            if (SystemFileSystem.metadataOrNull(fileOf(selected)) != null) prepare()
+            if (onDisk(selected)) prepare() else loadStandIn()
         }
     }
 
@@ -123,14 +138,23 @@ object ModelRepository {
 
     /** Switches to [spec], downloading it first if it is not on disk yet. */
     fun select(spec: ModelSpec) {
-        if (spec.id == selected.id && engine != null) return
+        // Nothing to do only when the chosen one is also the one running. «Selected
+        // and an engine exists» is not the same thing now that another model can be
+        // standing in — that reading made tapping the chosen model's own download
+        // button do nothing at all, since the stand-in had filled the engine slot.
+        if (spec.id == selected.id && _loaded.value?.id == spec.id) return
         job?.cancel()
         job = scope.launch {
-            unloadEngine()
             selected = spec
             writeSelection(spec)
             refreshModels()
             _status.value = ModelStatus.Idle
+            // Only swap engines when the new one is here. Picking a translator that
+            // has to be fetched used to unload the working one immediately, which
+            // left the app with nothing to translate with for the length of a
+            // gigabyte download; whatever is loaded stays until its replacement
+            // has actually arrived.
+            if (onDisk(spec)) unloadEngine()
             prepare()
         }
     }
@@ -156,9 +180,42 @@ object ModelRepository {
         }
     }
 
+    /**
+     * Loads whatever translator the device already has, when the chosen one is not
+     * here yet.
+     *
+     * Otherwise the app is dead for the length of a gigabyte download while a
+     * perfectly good model sits in its files directory — which is what it did, both
+     * on a launch where the selection names a model that was never fetched and for
+     * the whole of a switch to a new one. The catalog is newest first, so this takes
+     * the best available. It never overrides a loaded engine and never downloads.
+     *
+     * The consequence is that the loaded model can differ from the selected one, so
+     * anything reading a model has to be clear about which it wants — the prompt
+     * format in particular, which fails silently against the wrong one.
+     */
+    private suspend fun loadStandIn() {
+        if (engine != null) return
+        val standIn = ModelCatalog.entries
+            .firstOrNull { it.id != selected.id && onDisk(it) } ?: return
+        try {
+            _status.value = ModelStatus.Loading
+            engine = loadLlmEngine(fileOf(standIn).toString(), LlmParams())
+            _loaded.value = standIn
+            _status.value = ModelStatus.Ready
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A stand-in is a courtesy. If it will not load, say nothing and carry
+            // on with the download that is the actual job.
+            _status.value = ModelStatus.Idle
+        }
+    }
+
     private suspend fun unloadEngine() {
         engine?.close()
         engine = null
+        _loaded.value = null
     }
 
     private fun fileOf(spec: ModelSpec) = Path(modelsDirectory(), spec.fileName)
@@ -248,9 +305,11 @@ object ModelRepository {
 
         while (stalled < STALLED_ATTEMPTS_BEFORE_GIVING_UP) {
             try {
-                _status.value = ModelStatus.Downloading(DownloadProgress(progressed, spec.sizeBytes))
+                _status.value =
+                    ModelStatus.Downloading(DownloadProgress(progressed, spec.sizeBytes))
                 downloadModel(http, spec.url, modelFile) { progress ->
                     _status.value = ModelStatus.Downloading(progress)
+                    downloadProgressed(progress)
                 }
                 return
             } catch (e: CancellationException) {
@@ -270,25 +329,57 @@ object ModelRepository {
     private suspend fun prepare() {
         val spec = selected
         val modelFile = fileOf(spec)
+        // Whether this run had to go and get the model, which decides whether
+        // finishing is worth announcing. An ordinary launch loads and says nothing.
+        var fetched = false
 
         if (SystemFileSystem.metadataOrNull(modelFile) == null) {
-            try {
-                download(spec, modelFile)
-                refreshModels()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // The .part file is kept on purpose so a retry resumes instead of
-                // starting the whole transfer over again.
-                _status.value = ModelStatus.Failed(e.message ?: "the download failed")
-                return
-            }
+            fetched = true
+            // Before the transfer, not after: the point is to be usable *during* it.
+            loadStandIn()
+            // The hold starts here and is released in the finally below, which is
+            // past the *load* rather than past the last byte. Releasing it when the
+            // transfer ended dropped the process back to a cached one while it still
+            // had a 1.3 GiB file to map, and a device short of memory killed it
+            // there: the model was on disk, nothing was loaded, and the notification
+            // that says so never came. What the user is waiting for is a working
+            // translator, so that is what the service has to outlast.
+            downloadBegan(spec, DownloadProgress(partialSizeOf(modelFile), spec.sizeBytes))
         }
 
         try {
+            if (fetched) {
+                try {
+                    download(spec, modelFile)
+                    refreshModels()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The .part file is kept on purpose so a retry resumes instead of
+                    // starting the whole transfer over again.
+                    _status.value = ModelStatus.Failed(e.message ?: "the download failed")
+                    return
+                }
+            }
+
+            loadPrepared(spec, modelFile, announce = fetched)
+        } finally {
+            if (fetched) downloadEnded()
+        }
+    }
+
+    private suspend fun loadPrepared(spec: ModelSpec, modelFile: Path, announce: Boolean) {
+        try {
             _status.value = ModelStatus.Loading
+            // Drops the stand-in, if a download just ran with one in place. Two of
+            // these mapped at once is 2.6 GiB of a phone's memory.
+            unloadEngine()
             engine = loadLlmEngine(modelFile.toString(), LlmParams())
+            _loaded.value = spec
             _status.value = ModelStatus.Ready
+            // After the load, not after the transfer: «ready» should mean it can
+            // answer, and mapping a 1.3 GiB file takes a second or two more.
+            if (announce) translatorReady(spec)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
