@@ -26,9 +26,11 @@ import one.larkin.ilotoki.openUrl
 import one.larkin.ilotoki.ui.AppText
 import one.larkin.ilotoki.ui.Chip
 import one.larkin.ilotoki.ui.MarkTile
+import one.larkin.ilotoki.ui.IloTokiIcons
 import one.larkin.ilotoki.ui.Plate
 import one.larkin.ilotoki.ui.cardDrop
 import one.larkin.ilotoki.ui.fadeIn
+import one.larkin.ilotoki.ui.VectorIcon
 import one.larkin.ilotoki.ui.tap
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
 
@@ -43,11 +45,9 @@ private const val TOKI_PONA_URL = "https://tokipona.org"
  * «close this», and a card that slides about under the thumb before closing is
  * asking to be read as going somewhere, which it is not — see `previewed` on
  * [one.larkin.ilotoki.rememberBackGesture].
- */
-/**
- * [model] is what the engine holds, and [loaded] says whether it holds it yet.
  *
- * The pair matters because the card makes a claim: while a newly picked translator
+ * [model] is what the engine holds, and [loaded] says whether it holds it yet. The
+ * pair matters because the card makes a claim: while a newly picked translator
  * downloads there is nothing loaded at all — selecting one unloads the previous —
  * and «translates with» would be naming a file that is two percent of the way to
  * the device. The tense is the whole difference, so the name and its link stay.
@@ -98,7 +98,7 @@ fun AboutOverlay(model: ModelSpec, loaded: Boolean, onDismiss: () -> Unit) {
                         contentPadding = PaddingValues(0.dp),
                     ) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            AppText("✕", type.stamp.copy(fontSize = 13.sp, letterSpacing = 0.sp))
+                            VectorIcon(IloTokiIcons.Close, "close", colors.ink, 14.dp)
                         }
                     }
                 }

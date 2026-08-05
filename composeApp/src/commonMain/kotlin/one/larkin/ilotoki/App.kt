@@ -280,7 +280,7 @@ private fun Header(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (atHome) MarkTile(onClick = onMark) else BackSquare(onClick = onBack)
+            if (atHome) MarkTile(onClick = onMark, heavy = true) else BackSquare(onClick = onBack)
             AppText(screen.title, IloTokiTheme.type.title, color = IloTokiTheme.colors.ink)
         }
         if (atHome) {
