@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -41,6 +40,7 @@ import one.larkin.ilotoki.ui.SignalDot
 import one.larkin.ilotoki.ui.Stamp
 import one.larkin.ilotoki.ui.gibLabel
 import one.larkin.ilotoki.ui.roundGibLabel
+import one.larkin.ilotoki.ui.animateStateColour
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
 
 /**
@@ -251,7 +251,7 @@ private fun ModelPlate(
         // The stamp is where a switch shows up — «NOT ON DEVICE» becomes «IN USE» on
         // the plate you just tapped — so its two colours cross rather than cut.
         val stampSpec = tween<Color>(Motion.SLOW_COLOUR_MS, easing = Motion.EaseOut)
-        val stampBackground by animateColorAsState(
+        val stampBackground by animateStateColour(
             targetValue = when {
                 inUse -> colors.accent
                 newer -> colors.onAccent
@@ -261,7 +261,7 @@ private fun ModelPlate(
             animationSpec = stampSpec,
             label = "stampBackground",
         )
-        val stampInk by animateColorAsState(
+        val stampInk by animateStateColour(
             targetValue = when {
                 inUse -> colors.onAccent
                 newer -> colors.accent

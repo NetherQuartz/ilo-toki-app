@@ -1,6 +1,5 @@
 package one.larkin.ilotoki.ui
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -195,7 +194,7 @@ fun Modifier.tap(
             interactionSource = interaction,
             indication = null,
             enabled = enabled,
-            onClick = onClick,
+            onClick = { playHaptic(Haptic.Press); onClick() },
         )
 }
 
@@ -245,7 +244,7 @@ fun Plate(
                     Modifier.clickable(
                         interactionSource = interaction,
                         indication = null,
-                        onClick = onClick,
+                        onClick = { playHaptic(Haptic.Press); onClick() },
                     )
                 },
             )
@@ -344,7 +343,11 @@ fun IconSquare(
                 .fillMaxHeight()
                 .offset(sink, sink)
                 .surface(colors.paper, colors.line, 12.dp, 2.dp * (1f - press), colors.shadow, false)
-                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    onClick = { playHaptic(Haptic.Press); onClick() },
+                ),
             contentAlignment = Alignment.Center,
         ) {
             VectorIcon(icon, contentDescription, colors.ink, iconSize)
@@ -450,12 +453,12 @@ fun AppToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Mo
         animationSpec = tween(190, easing = Motion.Out),
         label = "toggleKnob",
     )
-    val track by animateColorAsState(
+    val track by animateStateColour(
         targetValue = if (checked) colors.accent else Color.Transparent,
         animationSpec = tween(Motion.COLOUR_MS, easing = Motion.EaseOut),
         label = "toggleTrack",
     )
-    val knobColor by animateColorAsState(
+    val knobColor by animateStateColour(
         targetValue = if (checked) colors.onAccent else colors.ink,
         animationSpec = tween(Motion.COLOUR_MS, easing = Motion.EaseOut),
         label = "toggleKnobColour",
@@ -536,7 +539,7 @@ fun SegmentedControl(
     ) {
         options.forEachIndexed { index, label ->
             val active = index == selectedIndex
-            val ink by animateColorAsState(
+            val ink by animateStateColour(
                 targetValue = if (active) colors.onAccent else colors.ink,
                 animationSpec = tween(Motion.SLOW_COLOUR_MS, easing = Motion.EaseOut),
                 label = "segmentInk",

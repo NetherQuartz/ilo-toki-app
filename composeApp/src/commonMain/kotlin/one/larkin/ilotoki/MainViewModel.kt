@@ -18,8 +18,14 @@ import one.larkin.ilotoki.data.SettingsRepository
 import one.larkin.ilotoki.model.ModelRepository
 import one.larkin.ilotoki.model.ModelSpec
 import one.larkin.ilotoki.model.ModelState
+import one.larkin.ilotoki.ui.Haptic
+import one.larkin.ilotoki.ui.playHaptic
 import one.larkin.ilotoki.ui.theme.ThemeSetting
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
+
+/** The closest two word taps are allowed to land. See the loop that uses it. */
+private val MIN_HAPTIC_GAP = 60.milliseconds
 
 data class TranslatorState(
     val query: String = "",
@@ -109,6 +115,8 @@ class MainViewModel : ViewModel() {
 
     fun setKeepHistory(enabled: Boolean) = SettingsRepository.setKeepHistory(enabled)
 
+    fun setHaptics(enabled: Boolean) = SettingsRepository.setHaptics(enabled)
+
     fun toggleOlin(id: Long) = HistoryRepository.toggleOlin(id)
 
     fun removeHistoryEntry(id: Long) = HistoryRepository.remove(id)
@@ -176,6 +184,7 @@ class MainViewModel : ViewModel() {
         translation = viewModelScope.launch {
             val started = TimeSource.Monotonic.markNow()
             var pieces = 0
+            var lastTick = started
             try {
                 engine.generate(prompt).collect { piece ->
                     pieces++
@@ -183,6 +192,14 @@ class MainViewModel : ViewModel() {
                     // happens; the engine's own figure is only final once it stops.
                     val seconds = started.elapsedNow().inWholeMilliseconds / 1000f
                     val rate = if (seconds > 0f) pieces / seconds else 0f
+                    // A tap per token is a texture at the two to eight tokens a
+                    // second a phone decodes at, and a buzz above that. The floor
+                    // never engages on the hardware this runs on today; it is there
+                    // so a fast model cannot turn the answer into a vibration.
+                    if (pieces == 1 || lastTick.elapsedNow() >= MIN_HAPTIC_GAP) {
+                        lastTick = TimeSource.Monotonic.markNow()
+                        playHaptic(Haptic.Word)
+                    }
                     _state.update { it.copy(result = it.result + piece, tokensPerSecond = rate) }
                 }
                 val rate = ModelRepository.engineOrNull()?.tokensPerSecond ?: 0f

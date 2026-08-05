@@ -229,6 +229,10 @@ private fun ListPlate(
     ) {
         Column {
             SettingsRow(divider = true) {
+                AppText("haptic feedback", type.row)
+                AppToggle(settings.haptics, viewModel::setHaptics)
+            }
+            SettingsRow(divider = true) {
                 AppText("keep history", type.row)
                 AppToggle(settings.keepHistory, viewModel::setKeepHistory)
             }
