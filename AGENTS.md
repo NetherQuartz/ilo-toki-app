@@ -82,8 +82,47 @@ translator that has to be fetched leaves the previous one loaded and answering f
 the length of the download, so the about card naming `selectedSpec()` told people
 they were using a model that was still arriving. `ModelRepository.loaded` is the
 one the engine actually holds; anything claiming what does the translating has to
-read that. `selectedSpec()` is still right for the prompt format at the moment a
-translation is issued, because that runs against the loaded engine.
+read that, including the prompt format. The card also changes tense rather than
+name — «will translate with» — because between choosing a model and its arriving
+there are moments when nothing is loaded at all.
+
+**A silent notification has no status bar icon.** From Android 12 a notification
+whose channel sits below `IMPORTANCE_DEFAULT` is kept out of the status bar
+entirely — it appears in the shade under «Silent» and nowhere else. `IMPORTANCE_LOW`
+looks like the considerate choice for a progress bar and costs exactly the thing
+the bar is for: the icon is what says «this is still going» while the app is off
+screen. The channel is `IMPORTANCE_DEFAULT` with `setSound(null, null)` and
+vibration off instead, which is quiet without being invisible; only
+`IMPORTANCE_HIGH` peeks. A channel's importance cannot be raised from code once it
+exists, and recreating one under the same id restores what it had, so moving up
+meant a new id and deleting the old one — see `LEGACY_CHANNEL_ID`.
+
+**The status bar icon is not the launcher's monochrome layer.** That one is laid
+out for a 108 dp adaptive canvas with the mark scaled to 0.58 to clear the round
+mask, so at the 24 dp a status bar gives you it draws a speck in a field of
+nothing. `ic_notification.xml` fits the same 100-grid paths to 24 dp directly:
+the mark spans 90 units tall, so 0.2222 puts it at 20 dp with 2 dp either side.
+
+**A model can be loaded that is not the selected one.** When the chosen translator
+is not on the device, whatever *is* there loads and answers in the meantime —
+otherwise the app is dead for the length of a gigabyte download with a working
+model sitting in its files directory, which is what it did both on a launch whose
+selection named a model that was never fetched and for the whole of a switch.
+Three things follow, and all three were bugs first:
+
+- **The prompt format must come from the loaded model**, never from the selected
+  one. Sending the wrong one does not fail loudly — see the prompt-format trap
+  above. 1.0 and 1.1 happen to share a format, so this would not have shown up
+  until a fine-tune that does not.
+- **`select()` may not return early on «already selected and an engine exists»**.
+  A stand-in fills the engine slot, so that reading made tapping the chosen
+  model's own download button do nothing at all. The condition is «the chosen one
+  is also the one running».
+- **The download only takes the target plate when nothing is loaded.** With a
+  stand-in answering, the plate goes back to translating and the slab carries the
+  progress. The gear's dot and the translators row light through `standingIn`,
+  and that row keeps naming the *chosen* model with a `NOT ON DEVICE` stamp — the
+  same word the translators screen uses — because the row is about the choice.
 
 **Adding a newer catalog entry strands everyone who never chose a model.** There is
 no `selected-model` file until someone picks one on the translators screen, so most

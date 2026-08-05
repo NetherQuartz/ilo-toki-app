@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The status bar icon: the mark alone, no tile behind it.
+
+    Not ic_launcher_monochrome, which is the same silhouette laid out for a 108 dp
+    adaptive canvas — inside it the mark is scaled to 0.58 to clear the round mask,
+    so rendered at the 24 dp a status bar gives you it comes out tiny in a field of
+    nothing. Here the same 100-grid paths are fitted to the 24 dp box directly.
+
+    The mark spans x 16..84 and y 5..95 on that grid, so 90 units tall. Scaling by
+    0.2222 puts it at 20 dp, leaving 2 dp top and bottom; translate = 0.889 centres
+    what is left. Android tints this flat and uses only its alpha, so every path is
+    opaque white and the shape is the whole of it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.2222"
+        android:scaleY="0.2222"
+        android:translateX="0.889"
+        android:translateY="0.889">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M16,32h68v7h-68z M16,81h68v7h-68z M16,32h7v56h-7z M77,32h7v56h-7z M46.5,32h7v63h-7z M46.5,5h7v16h-7z" />
+        <group
+            android:name="left_ray"
+            android:pivotX="23.5"
+            android:pivotY="15"
+            android:rotation="-38">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M20,7h7v16h-7z" />
+        </group>
+        <group
+            android:name="right_ray"
+            android:pivotX="76.5"
+            android:pivotY="15"
+            android:rotation="38">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M73,7h7v16h-7z" />
+        </group>
+    </group>
+</vector>

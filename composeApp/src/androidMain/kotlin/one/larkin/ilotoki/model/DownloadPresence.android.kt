@@ -20,7 +20,15 @@ import one.larkin.ilotoki.currentActivity
 import one.larkin.ilotoki.ui.formatGiB
 import one.larkin.ilotoki.ui.gibLabel
 
-private const val CHANNEL_ID = "model-download"
+private const val CHANNEL_ID = "downloads"
+
+/**
+ * The first attempt, at IMPORTANCE_LOW. A channel's importance cannot be raised
+ * from code once it exists — and recreating one under the same id restores what it
+ * had — so moving up meant a new id and clearing this one away.
+ */
+private const val LEGACY_CHANNEL_ID = "model-download"
+
 private const val NOTIFICATION_ID = 1
 
 /**
@@ -101,14 +109,23 @@ private fun ensureChannel() {
     val channel = NotificationChannel(
         CHANNEL_ID,
         "getting a translator",
-        // Low: this is a progress bar, not news. It should sit in the shade without
-        // making a sound or pushing itself in front of anything.
-        NotificationManager.IMPORTANCE_LOW,
+        // Default rather than low, which is the counter-intuitive part: from Android
+        // 12 a silent notification is kept out of the status bar entirely, and
+        // IMPORTANCE_LOW is silent. The icon in the status bar is most of the point
+        // — it is what says «this is still going» when the app is not on screen — so
+        // the channel has to be default, and the quiet comes from having no sound
+        // and no vibration instead. Default does not peek; only high does that.
+        NotificationManager.IMPORTANCE_DEFAULT,
     ).apply {
         description = "progress while a translator downloads"
         setShowBadge(false)
+        setSound(null, null)
+        enableVibration(false)
     }
-    runCatching { notifications.createNotificationChannel(channel) }
+    runCatching {
+        notifications.deleteNotificationChannel(LEGACY_CHANNEL_ID)
+        notifications.createNotificationChannel(channel)
+    }
 }
 
 private fun buildDownloadNotification(): Notification {
@@ -130,9 +147,9 @@ private fun buildDownloadNotification(): Notification {
     )
 
     return Notification.Builder(appContext, CHANNEL_ID)
-        // The themed launcher layer: a white silhouette on nothing, which is exactly
-        // what a status bar icon has to be.
-        .setSmallIcon(R.drawable.ic_launcher_monochrome)
+        // The mark alone, laid out for 24 dp — not the launcher's monochrome layer,
+        // which carries adaptive-icon padding and would draw a speck.
+        .setSmallIcon(R.drawable.ic_notification)
         .setContentTitle("getting the translator")
         .setContentText(text)
         // Collapsed, the bar takes the text line's place, so the figure would only

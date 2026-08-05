@@ -71,6 +71,7 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
         val history by viewModel.history.collectAsStateWithLifecycle()
         val hasUpdate by viewModel.hasUpdate.collectAsStateWithLifecycle()
         val loadedModel by viewModel.loadedModel.collectAsStateWithLifecycle()
+        val standingIn by viewModel.standingIn.collectAsStateWithLifecycle()
 
         var screen by remember { mutableStateOf(Screen.Translator) }
         var aboutOpen by remember { mutableStateOf(false) }
@@ -128,9 +129,10 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                 Header(
                     screen = shown,
                     // The dot is the one thing allowed to ask for attention, so it
-                    // means both kinds of «you need to go to settings»: nothing to
-                    // translate with, or something better to translate with.
-                    showDot = hasUpdate ||
+                    // means every kind of «you need to go to settings»: nothing to
+                    // translate with, something better to translate with, or a
+                    // translator standing in because the chosen one is still coming.
+                    showDot = hasUpdate || standingIn ||
                         (models.isNotEmpty() && models.none { it.downloaded }),
                     onMark = { aboutOpen = true },
                     onBack = goBack,
@@ -145,6 +147,7 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                         state = state,
                         status = status,
                         models = models,
+                        hasTranslator = loadedModel != null,
                         viewModel = viewModel,
                         onOpenModels = { screen = Screen.Models },
                     )
@@ -153,6 +156,7 @@ fun App(viewModel: MainViewModel = viewModel { MainViewModel() }) {
                         settings = settings,
                         models = models,
                         hasUpdate = hasUpdate,
+                        standingIn = standingIn,
                         historyCount = history.size,
                         viewModel = viewModel,
                         onOpenModels = { screen = Screen.Models },
