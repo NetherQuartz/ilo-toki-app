@@ -12,12 +12,21 @@ at the start of a session and correct it before relying on it.
 
 ## Traps
 
-**Merging this LoRA the obvious way produces a broken model.** The adapter touches
-`embed_tokens` and gemma3 ties `lm_head` to the same tensor, so a plain
+**Merging this LoRA the obvious way produces a broken model.** gemma3 ties
+`lm_head` to `embed_tokens`, and the adapter trains that tensor, so a plain
 `merge_and_unload()` yields a model that repeats one token forever. See
 [scripts/merge_lora.py](scripts/merge_lora.py) for the fix and the reasoning. Always
 generate from a merged model before shipping it — the failure is total but silent
 until you look.
+
+The trap survives a change in how the adapter reaches the embeddings, so do not
+read «no `embed_tokens` in `target_modules`» as «fixed». 1.0 put a full LoRA on
+`embed_tokens`; 1.1 trains 15 764 individual rows through PEFT's
+`trainable_token_indices` with `ensure_weight_tying: false` — which means the tied
+output head still read the *base* embeddings all through training, so the untie is
+still exactly what reproduces it. To check a merge rather than assume it: every
+index the adapter lists must have moved, no other row may have, `lm_head` must
+equal the *base* embeddings, and `tie_word_embeddings` must be `false`.
 
 **Prompt format is per-model and fails silently.** A fine-tune answers only to the
 format it was trained on. Send the wrong one and the model still produces fluent
@@ -53,6 +62,19 @@ delete everything in there the catalog did not claim, which silently ate both on
 next launch; it now only removes files ending in `.gguf`/`.gguf.part`. Anything new
 stored beside the models is safe, but a sweep that defaults to deleting is not —
 leave that predicate alone.
+
+**Adding a newer catalog entry strands everyone who never chose a model.** There is
+no `selected-model` file until someone picks one on the translators screen, so most
+people are implicitly on `ModelCatalog.default` — and the release that puts a newer
+entry at the top of the list moves that name onto a file they do not have. Marking
+the old entry `deprecated` keeps the *file* (`removeUnknownFiles()` spares anything
+the catalog still claims), but on its own it does not keep the *use* of it: the app
+came up saying NO TRANSLATOR YET and offering a 1.29 GiB download on a phone with a
+working 1.29 GiB model already on disk. `readSelection()` therefore falls back to
+the newest entry actually present, and only to the default when the device holds
+nothing at all. The update dot still lights, which is the right amount of pressure.
+Found by installing over a real phone's existing install — a fresh emulator cannot
+show it, because there the default genuinely is missing.
 
 **Space Grotesk is Latin-only and has no `‹` `›`.** Cyrillic falls through to the
 platform font, which is fine and intended (Russian is one of the three languages).
@@ -239,6 +261,21 @@ On iOS use the simulator control tool; its coordinate space is points, not pixel
 run prompts through it. That is the same code path the app uses, so it catches
 merge and format problems that a transformers-only check would not.
 
+**Comparing two models is a host job, not an emulator one.** Same quantization on
+both sides or the comparison means nothing. The tool is `llama-completion`, not
+`llama-cli`: upstream moved raw completion there, and `llama-cli` is now a chat
+CLI that is only built with `-DLLAMA_BUILD_SERVER=ON` — configure with
+`-DLLAMA_BUILD_TOOLS=ON` and build the `llama-completion` target. Feed the prompt
+with `-f` rather than `-p` (it has newlines in it), and add `--no-display-prompt`,
+`--no-warmup`, `-c 2048 -n 512` to match `LlmParams`.
+
+For greedy use `--temp 0 --top-k 1`. **Not `--samplers greedy`** — there is no
+sampler by that name, llama.cpp only warns («unable to match sampler by name») and
+carries on with *no* sampler at all, and what comes back is uniform noise that
+reads exactly like a broken merge. That warning goes to stderr, so it is invisible
+if stderr is being discarded. An hour went into blaming Metal for this; Metal is
+fine, and CPU and Metal agree on this model to within a word.
+
 ## Decisions worth not relitigating
 
 - **llama.cpp, not MLX or ExecuTorch.** Only cross-platform option that runs GGUF on
@@ -363,10 +400,32 @@ merge and format problems that a transformers-only check would not.
 
 ## Current state
 
-*Last updated: 2026-07-28.*
+*Last updated: 2026-08-05.*
 
-- Model: [ilo-toki-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-MiLMMT-46-1b-merged),
-  one repository holding the merged weights and four quantizations.
+- Model: [ilo-toki-1.1-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-1.1-MiLMMT-46-1b-merged),
+  one repository holding the merged weights and four quantizations. 1.0
+  ([ilo-toki-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-MiLMMT-46-1b-merged))
+  is still in the catalog, marked `deprecated`, and should be dropped a release
+  later. Same base and same prompt format, so `PromptStyle.SourceTarget` covers both.
+- **1.1 is better on balance, not on every axis**, measured over 95 prompts in both
+  directions across the three languages, Q8_0 against Q8_0. Fixed: `jan` no longer
+  comes back as Minecraft interface text (1.0: `jan li tawa ma` → «Player moves»,
+  `jan li pali e tomo` → «Building a Structure»; there is no Minecraft corpus in
+  1.1), clauses are no longer dropped from longer inputs, and terminal punctuation
+  barely moves the answer any more — it was dropped with p = 0.25 during training,
+  and 1.0 could flip meaning on it. Regressed: `la` is often read as a conditional
+  «if», `sona e toki pona` can answer about the wrong language («I know Russian»),
+  and short inputs pick up invented specifics. Separately, and more systematic than
+  it first looked: **1.1 resolves everything the source leaves unmarked to a fixed
+  default instead of reading it off the context.** Bare `mi` comes back as «we» in
+  six of seven sentences where 1.0 said «I», unmarked verbs tend to come back past,
+  and `la` tends to come back conditional. None of these is an *error* — `mi` covers
+  «we» and `mi mute` is optional, so filtering such pairs out of the training data
+  would be throwing away good ones — but consistently picking the less expected of
+  two valid readings is still a behaviour change worth knowing about. On a
+  head-count of the general set the two are near enough level; 1.1 wins because
+  `jan` is in a large share of all sentences and short bare sentences are the
+  common case, while its own failures need rarer constructions.
 - **The «sitelen» redesign is on `main`**, merged as
   [#3](https://github.com/NetherQuartz/ilo-toki-app/pull/3). Four screens (translator, settings,
   translators, history) plus an about overlay, own primitives and tokens instead of
@@ -412,10 +471,37 @@ Open:
   `local.properties` or the environment — never from a committed file. `versionCode`
   is still 1 and has to start moving once updates are a thing.
 
-- **The model needs retraining.** `jan` comes back as "Player" — almost certainly the
-  Minecraft translation corpus, and `jan` is in half of all sentences. Longer inputs
-  lose clauses: `soweli lili li lape lon tomo` gives "Rabbit sleeps". Translation
-  *into* Toki Pona looks clean; the damage is one-directional.
+- **What the next training round should address.** Three things, all 1.1's, all
+  visible in the comparison log. `la` is read as a conditional — `mi wile lape la mi
+  tawa tomo` gives "If I want to sleep then I go home", and the second clause is
+  sometimes mangled along with it; 1.0 handled `la` better, so something in its mix
+  covered this and got diluted, and diffing the `la` subsets of the two mixes is the
+  fast way to find out what. `sona e toki pona` names the wrong language ("I know
+  Russian"), which is a bad place for a bug in this app; other constructions around
+  `toki pona` are fine, so the trigger is narrow and counterfactual examples
+  (language names as sentence content, templated across the language list) should
+  close it. Short inputs acquire invented specifics — `jan li moku e kili` into
+  Vietnamese produces a US state — which looks like mined pairs whose target side
+  carries more than the Toki Pona side ever said; a length-ratio filter and a
+  round-trip check over the mined set target that class directly.
+
+  The likely common cause is the `x`↔`y` pairs added in 1.1 to keep natural-language
+  generation fluent. They worked — 1.0's Russian broke outright ("Яблоко ест", "Не
+  удалось отправить жалобу"), 1.1's does not — but in an `x`↔`y` pair every feature
+  the model has to *infer* in `tok`→`x` is already marked on the source side. Number,
+  tense and clause relation are all given; nothing there teaches reading them off
+  the context, only priors over them. `tok`→`x` is the sole place that skill is
+  practised, so the more the mix is diluted, the flatter the defaults get.
+
+  Two things that were checked and did **not** hold, so nobody has to re-run them:
+  the damage does not track how rare a construction is — `pi`, `o`, `anu`, `en`,
+  `nanpa` and `kin` all survive 1.1 intact, and `kin` and `anu` come out better than
+  in 1.0 — and `la` is not broken across the board, only collapsed onto the
+  conditional reading. Phrase-`la` (`tenpo pimeja la mi lape`) is right in both
+  models, and clause-`la` is right in 1.1 whenever the relation genuinely *is*
+  conditional. So «Toki Pona's share of the mix fell from 3:1 to 1:1:1» does not on
+  its own explain what regressed; what the evidence points at is the share of pairs
+  in which nothing has to be inferred.
 - The translators screen could offer the other quantizations; the machinery is there,
   it needs entries in the catalog.
 - Swipe-to-delete on a history card is in the spec; the explicit `✕` is what is
