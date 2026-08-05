@@ -291,7 +291,11 @@ private fun HistoryCard(
                         background = Color.Transparent,
                         border = colors.faint,
                         contentColor = colors.muted,
-                        dim = false,
+                        // Dimmed like an unmarked olin, which is what it sits beside.
+                        // Both are dormant controls on a card that is mostly text, and
+                        // at full strength a 2.2 dp cross is the darkest thing on it —
+                        // it read as a different colour rather than a different state.
+                        dim = true,
                     ) {
                         VectorIcon(
                             icon = IloTokiIcons.Close,
