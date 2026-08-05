@@ -31,11 +31,29 @@ import androidx.compose.ui.unit.dp
  * | clock | 22 dp | 10 | 2.20 dp |
  * | chevron | 18 dp | 12 | 2.16 dp |
  * | swap | 26 dp | 8.5 | 2.21 dp |
+ * | mark | 23 dp | 9.5 | 2.19 dp |
  */
 object IloTokiIcons {
 
-    /** `ilo` box with three `toki` rays. Header, about card, empty-state watermark. */
+    /** Bar width of [Mark] on the 100 grid. See its doc comment for what it drives. */
+    private const val MARK_BAR = 9.5f
+
+    /**
+     * `ilo` box with three `toki` rays. Header, about card, empty-state watermark.
+     *
+     * Every bar is [MARK_BAR] wide and the outer bounds are fixed, so the whole
+     * figure follows from one number: the box spans x 16..84 and y 32..88, the
+     * stem and the middle ray are centred on 50, and the leaning rays on 23.5 and
+     * 76.5, which are also their pivots. 9.5 puts it at 2.19 dp in the header's
+     * 23 dp — the weight the rest of the icon set carries — where the original 7
+     * left it at 1.61 and reading light beside them.
+     *
+     * The launcher and status bar icons are their own drawables under
+     * `androidMain/res` and do **not** follow this: they are the same silhouette
+     * at the original 7, and were deliberately left there.
+     */
     val Mark: ImageVector by lazy {
+        val w = MARK_BAR
         ImageVector.Builder(
             name = "mark",
             defaultWidth = 24.dp,
@@ -45,19 +63,19 @@ object IloTokiIcons {
         ).apply {
             path(fill = SolidColor(Color.Black)) {
                 // The box, its lid and floor, and the middle ray.
-                rect(16f, 32f, 68f, 7f)
-                rect(16f, 81f, 68f, 7f)
-                rect(16f, 32f, 7f, 56f)
-                rect(77f, 32f, 7f, 56f)
-                rect(46.5f, 32f, 7f, 63f)
-                rect(46.5f, 5f, 7f, 16f)
+                rect(16f, 32f, 68f, w)
+                rect(16f, 88f - w, 68f, w)
+                rect(16f, 32f, w, 56f)
+                rect(84f - w, 32f, w, 56f)
+                rect(50f - w / 2f, 32f, w, 63f)
+                rect(50f - w / 2f, 5f, w, 16f)
             }
             // The outer two rays lean away from the middle one.
             group(name = "left-ray", rotate = -38f, pivotX = 23.5f, pivotY = 15f) {
-                path(fill = SolidColor(Color.Black)) { rect(20f, 7f, 7f, 16f) }
+                path(fill = SolidColor(Color.Black)) { rect(23.5f - w / 2f, 7f, w, 16f) }
             }
             group(name = "right-ray", rotate = 38f, pivotX = 76.5f, pivotY = 15f) {
-                path(fill = SolidColor(Color.Black)) { rect(73f, 7f, 7f, 16f) }
+                path(fill = SolidColor(Color.Black)) { rect(76.5f - w / 2f, 7f, w, 16f) }
             }
         }.build()
     }
