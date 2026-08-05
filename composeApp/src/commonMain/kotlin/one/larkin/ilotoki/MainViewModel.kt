@@ -42,6 +42,7 @@ class MainViewModel : ViewModel() {
 
     val modelStatus = ModelRepository.status
     val models = ModelRepository.models
+    val loadedModel = ModelRepository.loaded
     val settings = SettingsRepository.settings
     val history = HistoryRepository.entries
 

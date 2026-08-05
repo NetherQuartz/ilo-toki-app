@@ -63,6 +63,28 @@ next launch; it now only removes files ending in `.gguf`/`.gguf.part`. Anything 
 stored beside the models is safe, but a sweep that defaults to deleting is not —
 leave that predicate alone.
 
+**Backgrounding the app used to stop the download dead.** Android freezes a cached
+process, so a gigabyte transfer running on the app's own coroutine simply stopped —
+no error, no notice, and on coming back the figure had not moved. The cure is a
+foreground service (`ModelDownloadService`, type `dataSync`) whose entire job is to
+exist: it downloads nothing, and being started is what keeps the process out of the
+freezer while `ModelRepository` carries on. The three `DownloadPresence` calls are
+in a `finally` around the whole retry loop, not around one attempt — the loop
+retries a dropped connection several times and the hold has to span all of them and
+be released exactly once, including on the pause path, which cancels the job.
+POST_NOTIFICATIONS is asked for when a download starts rather than at launch, and
+refusing it costs the progress bar, not the transfer. On Android 15 and up
+`dataSync` has a daily budget of a few hours; a model is minutes, so it is not in
+reach — but a longer-running transfer would have to care.
+
+**«Translates with» is the loaded model, not the selected one.** Picking a
+translator that has to be fetched leaves the previous one loaded and answering for
+the length of the download, so the about card naming `selectedSpec()` told people
+they were using a model that was still arriving. `ModelRepository.loaded` is the
+one the engine actually holds; anything claiming what does the translating has to
+read that. `selectedSpec()` is still right for the prompt format at the moment a
+translation is issued, because that runs against the loaded engine.
+
 **Adding a newer catalog entry strands everyone who never chose a model.** There is
 no `selected-model` file until someone picks one on the translators screen, so most
 people are implicitly on `ModelCatalog.default` — and the release that puts a newer
@@ -502,6 +524,19 @@ Open:
   conditional. So «Toki Pona's share of the mix fell from 3:1 to 1:1:1» does not on
   its own explain what regressed; what the evidence points at is the share of pairs
   in which nothing has to be inferred.
+- **iOS still stops its download when the app leaves the screen.** The Android cure
+  does not port: there the same coroutine is kept alive, whereas iOS wants the
+  transfer handed to the system through a background `NSURLSession`, which runs out
+  of process and survives the app being killed. That is a different download rather
+  than the same one held open, so it replaces the ktor path on that platform and
+  has to report progress back through a session delegate — it cannot hide behind
+  the three `DownloadPresence` calls, which is why the iOS actual is an honest
+  no-op with the reasoning in its doc comment. `beginBackgroundTask` was considered
+  and rejected: thirty seconds of grace covers switching apps and coming straight
+  back, which would make the bug look fixed while a gigabyte over a slow connection
+  fails exactly as before. **The simulator cannot verify any of this** — it does not
+  suspend apps the way a device does, so both the bug and its fix are invisible
+  there. Whoever picks this up needs a real iPhone, or the code goes in unproven.
 - The translators screen could offer the other quantizations; the machinery is there,
   it needs entries in the catalog.
 - Swipe-to-delete on a history card is in the spec; the explicit `✕` is what is

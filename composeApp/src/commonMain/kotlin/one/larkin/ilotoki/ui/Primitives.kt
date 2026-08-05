@@ -71,9 +71,9 @@ val BorderWidth = 2.dp
  * Fill and hard shadow behind the content, outline **over** it.
  *
  * The order matters: several surfaces are filled by a child that reaches their own
- * edge — the growing accent behind the slab's label, the progress line, the active
- * cell of a segmented control. Drawn behind, the outline disappears under all of
- * them; drawn last, the 2 dp ink line stays unbroken, which is the whole look.
+ * edge — the growing accent behind the slab's label, the active cell of a segmented
+ * control. Drawn behind, the outline disappears under all of them; drawn last, the
+ * 2 dp ink line stays unbroken, which is the whole look.
  *
  * The shadow is drawn rather than elevated on purpose: `Modifier.shadow` is blurred
  * and alpha-graded, which is the one thing this look never uses. It is painted
@@ -606,31 +606,6 @@ fun Chip(
 
 /** What a pill does under a finger, everywhere in the design that one does. */
 const val PressSqueeze = 0.96f
-
-/**
- * The download line: 12 dp tall, under the header, never in the way.
- *
- * It is the whole of the download UI on the translator screen — the point of the
- * redesign is that fetching a model no longer takes the screen hostage.
- */
-@Composable
-fun ProgressLine(fraction: Float, modifier: Modifier = Modifier) {
-    val colors = IloTokiTheme.colors
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(12.dp)
-            .surface(colors.paper, colors.line, 8.dp, 0.dp, Color.Transparent, dashed = false)
-            .clip(RoundedCornerShape(8.dp)),
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth(animatedProgress(fraction))
-                .fillMaxHeight()
-                .background(colors.accent),
-        )
-    }
-}
 
 /**
  * A download reports in jumps; the line it moves must not.

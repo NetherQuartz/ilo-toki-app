@@ -66,6 +66,16 @@ object ModelRepository {
     private val _models = MutableStateFlow(emptyList<ModelState>())
     val models: StateFlow<List<ModelState>> = _models.asStateFlow()
 
+    /**
+     * The model the engine actually holds, which is not the selected one.
+     *
+     * Selecting a translator that has to be fetched leaves the previous one loaded
+     * and answering for the length of a gigabyte download, so anything claiming
+     * «this is what translates for you» has to name this rather than [selectedSpec].
+     */
+    private val _loaded = MutableStateFlow<ModelSpec?>(null)
+    val loaded: StateFlow<ModelSpec?> = _loaded.asStateFlow()
+
     private var engine: LlmEngine? = null
     private var job: Job? = null
     private var selected: ModelSpec = ModelCatalog.default
@@ -159,6 +169,7 @@ object ModelRepository {
     private suspend fun unloadEngine() {
         engine?.close()
         engine = null
+        _loaded.value = null
     }
 
     private fun fileOf(spec: ModelSpec) = Path(modelsDirectory(), spec.fileName)
@@ -246,22 +257,32 @@ object ModelRepository {
         var stalled = 0
         var lastError: Exception? = null
 
-        while (stalled < STALLED_ATTEMPTS_BEFORE_GIVING_UP) {
-            try {
-                _status.value = ModelStatus.Downloading(DownloadProgress(progressed, spec.sizeBytes))
-                downloadModel(http, spec.url, modelFile) { progress ->
-                    _status.value = ModelStatus.Downloading(progress)
+        // Outside the retry loop and in a finally: the platform's hold on the
+        // process has to cover every attempt and be released on all four ways out
+        // — done, given up, cancelled by a pause, or the scope dying.
+        downloadBegan(spec, DownloadProgress(progressed, spec.sizeBytes))
+        try {
+            while (stalled < STALLED_ATTEMPTS_BEFORE_GIVING_UP) {
+                try {
+                    _status.value =
+                        ModelStatus.Downloading(DownloadProgress(progressed, spec.sizeBytes))
+                    downloadModel(http, spec.url, modelFile) { progress ->
+                        _status.value = ModelStatus.Downloading(progress)
+                        downloadProgressed(progress)
+                    }
+                    return
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    lastError = e
+                    val downloaded = partialSizeOf(modelFile)
+                    stalled = if (downloaded > progressed) 0 else stalled + 1
+                    progressed = downloaded
+                    delay(RETRY_DELAY_MILLIS)
                 }
-                return
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                lastError = e
-                val downloaded = partialSizeOf(modelFile)
-                stalled = if (downloaded > progressed) 0 else stalled + 1
-                progressed = downloaded
-                delay(RETRY_DELAY_MILLIS)
             }
+        } finally {
+            downloadEnded()
         }
 
         throw lastError ?: IllegalStateException("the download failed")
@@ -288,6 +309,7 @@ object ModelRepository {
         try {
             _status.value = ModelStatus.Loading
             engine = loadLlmEngine(modelFile.toString(), LlmParams())
+            _loaded.value = spec
             _status.value = ModelStatus.Ready
         } catch (e: CancellationException) {
             throw e
