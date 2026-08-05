@@ -17,9 +17,3 @@ fun gibLabel(bytes: Long): String = "${formatGiB(bytes)} GiB"
 
 /** Whole gibibytes, for the free-space figure where the decimals are noise. */
 fun roundGibLabel(bytes: Long): String = "${(bytes / BYTES_PER_GIB).toLong()} GiB"
-
-/** «4.8 tok/s» — one decimal, because the second one changes every token. */
-fun tokensPerSecondLabel(rate: Float): String {
-    val tenths = (rate * 10).toLong()
-    return "${tenths / 10}.${tenths % 10} tok/s"
-}

@@ -163,6 +163,34 @@ nothing at all. The update dot still lights, which is the right amount of pressu
 Found by installing over a real phone's existing install — a fresh emulator cannot
 show it, because there the default genuinely is missing.
 
+**Switching the theme used to animate every colour on screen at once.** Each of
+them is animated for a good reason — a cell filling, the slab going from offer to
+progress — and each reads its target out of the palette, so changing light to dark
+changed all their targets together and one tap became a dozen tweens crossing at
+their own durations. The accent visibly crawled from element to element, which
+looks nothing like anything else here. `animateStateColour` in
+[Motion.kt](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/ui/Motion.kt) keys
+the animation on the palette, so a new theme rebuilds it at its target: state still
+eases, the theme snaps. Measured with `screenrecord` at 60 fps — the whole screen
+goes from mean brightness 240 to 27 in a single frame. Use it, not
+`animateColorAsState`, for anything whose target comes out of `IloTokiTheme.colors`.
+
+**Haptics go through the platform's UI-feedback path, never the vibrator.**
+`View.performHapticFeedback` on Android and the `UIFeedbackGenerator` family on
+iOS: both are tuned per device and both already obey the phone's own haptics
+switch, which a raw `Vibrator` call would have to be taught. The app's switch
+(`AppSettings.haptics`, «haptic feedback» in settings) sits on top of that.
+
+The two taps are different in kind, not in volume. A press is a decision and gets
+`KEYBOARD_TAP` / a light impact; a word landing is a texture that repeats inside
+one action and gets `CLOCK_TICK` / a selection tick, the faintest thing either
+platform offers. On a Pixel 6 that comes out as `Primitive=CLICK` at 21–37 ms
+against 15–16 ms for the tick — `adb shell dumpsys vibrator_manager` prints what
+was actually played, which is the only way to check this without a hand on the
+phone. Words are also floored at 60 ms apart: it never engages at the two to eight
+tokens a second a phone decodes at, and it is there so a faster model cannot turn
+an answer into a buzz.
+
 **Space Grotesk is Latin-only and has no `‹` `›`.** Cyrillic falls through to the
 platform font, which is fine and intended (Russian is one of the three languages).
 The guillemets are not: typing them gets a mismatched fallback glyph, so every

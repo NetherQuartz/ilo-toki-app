@@ -1,6 +1,5 @@
 package one.larkin.ilotoki.ui.screens
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -110,8 +109,8 @@ import one.larkin.ilotoki.ui.VectorIcon
 import one.larkin.ilotoki.ui.formatGiB
 import one.larkin.ilotoki.ui.gibLabel
 import one.larkin.ilotoki.ui.tap
+import one.larkin.ilotoki.ui.animateStateColour
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
-import one.larkin.ilotoki.ui.tokensPerSecondLabel
 
 /** How many sample phrases the row under the slab offers. */
 private const val SAMPLE_COUNT = 3
@@ -679,14 +678,6 @@ private fun ResultPlate(
                     onPick = onPickLanguage,
                     pickerOpen = pickerOpen,
                 )
-                if (state.isTranslating && state.tokensPerSecond > 0f) {
-                    Stamp(
-                        text = tokensPerSecondLabel(state.tokensPerSecond),
-                        modifier = Modifier.popIn(160, TransformOrigin.Center),
-                        background = colors.onAccent,
-                        contentColor = colors.accent,
-                    )
-                }
             }
             Spacer(Modifier.height(10.dp))
             // Tapping the text flips the script too — the pill is the discoverable
@@ -1066,12 +1057,12 @@ private fun Slab(
     // The slab is one control that changes what it is — offer, progress, action —
     // so its two colours cross over rather than cut, and the label changes under a
     // surface that is already on its way to the new state.
-    val slabBackground by animateColorAsState(
+    val slabBackground by animateStateColour(
         targetValue = if (downloading != null) colors.paper else background,
         animationSpec = tween(Motion.SLOW_COLOUR_MS, easing = Motion.EaseOut),
         label = "slabBackground",
     )
-    val slabContent by animateColorAsState(
+    val slabContent by animateStateColour(
         targetValue = if (downloading != null) colors.ink else content,
         animationSpec = tween(Motion.SLOW_COLOUR_MS, easing = Motion.EaseOut),
         label = "slabContent",
@@ -1328,9 +1319,9 @@ private fun ScriptButton(on: Boolean, onAccentPlate: Boolean, onClick: () -> Uni
     // Fill, ink, outline and the dimming all cross together: the pill is written in
     // the script it turns on, so what changes is the same word lighting up.
     val pillSpec = tween<Color>(170, easing = Motion.EaseOut)
-    val pillBackground by animateColorAsState(background, pillSpec, label = "pillBackground")
-    val pillContent by animateColorAsState(content, pillSpec, label = "pillContent")
-    val pillBorder by animateColorAsState(borderColor, pillSpec, label = "pillBorder")
+    val pillBackground by animateStateColour(background, pillSpec, label = "pillBackground")
+    val pillContent by animateStateColour(content, pillSpec, label = "pillContent")
+    val pillBorder by animateStateColour(borderColor, pillSpec, label = "pillBorder")
     val pillAlpha by animateFloatAsState(
         targetValue = if (on) 1f else 0.55f,
         animationSpec = tween(170, easing = Motion.EaseOut),

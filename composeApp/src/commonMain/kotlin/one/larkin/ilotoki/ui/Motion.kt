@@ -1,5 +1,6 @@
 package one.larkin.ilotoki.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
@@ -7,11 +8,14 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
@@ -19,6 +23,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -355,4 +360,25 @@ fun Modifier.nudge(): Modifier {
         label = "calloutHop",
     )
     return graphicsLayer { translationY = hop.dp.toPx() }
+}
+
+/**
+ * A colour that eases when the *state* changes and snaps when the *theme* does.
+ *
+ * Every colour on screen is animated for a reason — a cell filling, a slab going
+ * from offer to progress — and each of those reads its target out of the palette.
+ * Switching light to dark changes the palette under all of them at once, so plain
+ * `animateColorAsState` turns one tap into a dozen independent tweens crossing at
+ * their own durations: the accent visibly crawls from element to element, which
+ * looks nothing like the rest of this design. Keying the animation on the palette
+ * rebuilds it at its new target instead, so a theme change is instantaneous and
+ * everything else still moves.
+ */
+@Composable
+fun animateStateColour(
+    targetValue: Color,
+    animationSpec: AnimationSpec<Color>,
+    label: String = "colour",
+): State<Color> = key(IloTokiTheme.colors) {
+    animateColorAsState(targetValue, animationSpec, label = label)
 }

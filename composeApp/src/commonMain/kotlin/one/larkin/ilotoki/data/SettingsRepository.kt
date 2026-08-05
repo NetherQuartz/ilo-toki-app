@@ -21,6 +21,8 @@ data class AppSettings(
     /** Android only, and only from API 31; ignored where there is no system palette. */
     val useSystemColours: Boolean = false,
     val keepHistory: Boolean = true,
+    /** The small taps under a press and under each decoded word. */
+    val haptics: Boolean = true,
 )
 
 /**
@@ -50,6 +52,8 @@ object SettingsRepository {
 
     fun setKeepHistory(enabled: Boolean) = update { it.copy(keepHistory = enabled) }
 
+    fun setHaptics(enabled: Boolean) = update { it.copy(haptics = enabled) }
+
     private fun update(transform: (AppSettings) -> AppSettings) {
         val next = transform(_settings.value)
         if (next == _settings.value) return
@@ -72,6 +76,7 @@ object SettingsRepository {
                 ?: ThemeSetting.System,
             useSystemColours = values["systemColours"] == "true",
             keepHistory = values["keepHistory"] != "false",
+            haptics = values["haptics"] != "false",
         )
     }
 
@@ -81,6 +86,7 @@ object SettingsRepository {
             append("theme=").append(settings.theme.name).append('\n')
             append("systemColours=").append(settings.useSystemColours).append('\n')
             append("keepHistory=").append(settings.keepHistory).append('\n')
+            append("haptics=").append(settings.haptics).append('\n')
         },
     )
 }

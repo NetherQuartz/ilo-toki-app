@@ -116,6 +116,10 @@ private fun AppearancePlate(settings: AppSettings, viewModel: MainViewModel) {
                                 strokeWidth = BorderWidth.toPx(),
                             )
                         }
+                        // Before the padding, so the whole row answers rather than
+                        // just the strip the text sits in. The toggle's own tap
+                        // consumes a press that lands on it, so it fires once.
+                        .tap { viewModel.setUseSystemColours(!settings.useSystemColours) }
                         .padding(top = 13.dp),
                 ) {
                     Row(
@@ -228,7 +232,17 @@ private fun ListPlate(
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
     ) {
         Column {
-            SettingsRow(divider = true) {
+            SettingsRow(
+                divider = true,
+                onClick = { viewModel.setHaptics(!settings.haptics) },
+            ) {
+                AppText("haptic feedback", type.row)
+                AppToggle(settings.haptics, viewModel::setHaptics)
+            }
+            SettingsRow(
+                divider = true,
+                onClick = { viewModel.setKeepHistory(!settings.keepHistory) },
+            ) {
                 AppText("keep history", type.row)
                 AppToggle(settings.keepHistory, viewModel::setKeepHistory)
             }

@@ -1,6 +1,5 @@
 package one.larkin.ilotoki.ui.screens
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -44,6 +43,7 @@ import one.larkin.ilotoki.ui.screenBottomInsets
 import one.larkin.ilotoki.ui.screenIn
 import one.larkin.ilotoki.ui.Stamp
 import one.larkin.ilotoki.ui.tap
+import one.larkin.ilotoki.ui.animateStateColour
 import one.larkin.ilotoki.ui.theme.IloTokiTheme
 
 /**
@@ -85,12 +85,12 @@ fun HistoryScreen(
             // The two filters are one choice, so the fill crosses between them
             // rather than switching off here and on there.
             val filterSpec = tween<Color>(Motion.COLOUR_MS, easing = Motion.EaseOut)
-            val allBackground by animateColorAsState(
+            val allBackground by animateStateColour(
                 targetValue = if (onlyOlin) Color.Transparent else colors.ink,
                 animationSpec = filterSpec,
                 label = "allBackground",
             )
-            val allInk by animateColorAsState(
+            val allInk by animateStateColour(
                 targetValue = if (onlyOlin) colors.ink else colors.bg,
                 animationSpec = filterSpec,
                 label = "allInk",
@@ -195,12 +195,12 @@ fun HistoryScreen(
 private fun OlinFilterChip(count: Int, active: Boolean, onClick: () -> Unit) {
     val colors = IloTokiTheme.colors
     val spec = tween<Color>(Motion.COLOUR_MS, easing = Motion.EaseOut)
-    val background by animateColorAsState(
+    val background by animateStateColour(
         targetValue = if (active) colors.accent else Color.Transparent,
         animationSpec = spec,
         label = "olinFilterBackground",
     )
-    val ink by animateColorAsState(
+    val ink by animateStateColour(
         targetValue = if (active) colors.onAccent else colors.ink,
         animationSpec = spec,
         label = "olinFilterInk",
@@ -318,9 +318,9 @@ private fun SmallSquare(
     content: @Composable () -> Unit,
 ) {
     val spec = tween<Color>(Motion.COLOUR_MS, easing = Motion.EaseOut)
-    val fill by animateColorAsState(background, spec, label = "squareFill")
-    val outline by animateColorAsState(border, spec, label = "squareOutline")
-    val ink by animateColorAsState(contentColor, spec, label = "squareInk")
+    val fill by animateStateColour(background, spec, label = "squareFill")
+    val outline by animateStateColour(border, spec, label = "squareOutline")
+    val ink by animateStateColour(contentColor, spec, label = "squareInk")
     val dimming by animateFloatAsState(
         targetValue = if (dim) 0.6f else 1f,
         animationSpec = tween(Motion.COLOUR_MS, easing = Motion.EaseOut),
