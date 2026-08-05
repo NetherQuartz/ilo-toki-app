@@ -8,6 +8,10 @@ local.properties
 .idea
 .DS_Store
 captures
+# Platform diagnostic dumps — `adb bugreport` or the developer menu. A few
+# megabytes of logcat and dumpsys, and from a real phone they carry notification
+# text, account names and Wi-Fi networks, so they stay out by pattern.
+bugreport-*.zip
 .externalNativeBuild
 .cxx
 *.xcodeproj/*
