@@ -191,6 +191,18 @@ phone. Words are also floored at 60 ms apart: it never engages at the two to eig
 tokens a second a phone decodes at, and it is there so a faster model cannot turn
 an answer into a buzz.
 
+**An icon's stroke is not its weight on screen.** The set is drawn on a 100-unit
+grid that is scaled to whatever size a call site asks for, so what reaches the eye
+is `stroke ÷ 100 × size` — and the same grid stroke across icons drawn at
+different sizes comes out visibly uneven. The clock at 7/22 dp and the back
+chevron at 9/18 dp sat at 1.54 and 1.62 dp against the gear's 2.30 and read as
+thin beside it. Each stroke is now chosen for the size its icon is drawn at,
+aiming at about 2.2 dp, which is also `BorderWidth` — the line every surface here
+is outlined with, so the icons sit at the weight of everything around them. The
+table is in
+[IloTokiIcons.kt](composeApp/src/commonMain/kotlin/one/larkin/ilotoki/ui/IloTokiIcons.kt);
+changing a size at a call site means moving the stroke with it.
+
 **Space Grotesk is Latin-only and has no `‹` `›`.** Cyrillic falls through to the
 platform font, which is fine and intended (Russian is one of the three languages).
 The guillemets are not: typing them gets a mismatched fallback glyph, so every

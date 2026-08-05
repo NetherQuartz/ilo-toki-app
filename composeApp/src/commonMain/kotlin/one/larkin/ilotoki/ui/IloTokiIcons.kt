@@ -12,9 +12,25 @@ import androidx.compose.ui.unit.dp
 
 /**
  * The whole icon set, drawn from rectangles, triangles and circles on a 100×100
- * grid with a 7/100 stroke. There is no icon font and no hand-drawn path beyond
- * that — the shapes are the design language, so they are built here rather than
- * imported, and the geometry below is the same as the design bundle's SVGs.
+ * grid. There is no icon font and no hand-drawn path beyond that — the shapes are
+ * the design language, so they are built here rather than imported, and the
+ * geometry below is the same as the design bundle's SVGs.
+ *
+ * **Stroke weights are chosen for the size each icon is drawn at, not shared.**
+ * The grid is scaled to whatever a call site asks for, so what reaches the screen
+ * is `stroke ÷ 100 × size`, and a single grid stroke across icons of different
+ * sizes comes out visibly uneven — the clock and the back chevron sat at 1.54 and
+ * 1.62 dp against the gear's 2.30 and read as thin next to it. Everything aims at
+ * about 2.2 dp instead, which is also [BorderWidth], the line every surface in
+ * this design is outlined with. Change a size at a call site and the stroke here
+ * has to move with it:
+ *
+ * | icon | drawn at | stroke | on screen |
+ * |---|---|---|---|
+ * | gear | 23 dp | 10 | 2.30 dp |
+ * | clock | 22 dp | 10 | 2.20 dp |
+ * | chevron | 18 dp | 12 | 2.16 dp |
+ * | swap | 26 dp | 8.5 | 2.21 dp |
  */
 object IloTokiIcons {
 
@@ -77,13 +93,13 @@ object IloTokiIcons {
         ).apply {
             path(
                 stroke = SolidColor(Color.Black),
-                strokeLineWidth = 7f,
+                strokeLineWidth = 10f,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round,
             ) { circle(50f, 50f, 34f) }
             path(
                 stroke = SolidColor(Color.Black),
-                strokeLineWidth = 7f,
+                strokeLineWidth = 10f,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round,
             ) {
@@ -100,9 +116,11 @@ object IloTokiIcons {
      */
     val SwapVertical: ImageVector by lazy {
         filled("swap-vertical") {
-            rect(24f, 34f, 7f, 42f)
+            // The bars carry the weight; the arrowheads are already solid, so only
+            // these move. 8.5 wide keeps them centred on 27.5 and 72.5.
+            rect(23.25f, 34f, 8.5f, 42f)
             moveTo(27.5f, 13f); lineTo(43f, 40f); lineTo(12f, 40f); close()
-            rect(69f, 24f, 7f, 42f)
+            rect(68.25f, 24f, 8.5f, 42f)
             moveTo(72.5f, 87f); lineTo(57f, 60f); lineTo(88f, 60f); close()
         }
     }
@@ -121,7 +139,7 @@ object IloTokiIcons {
         ).apply {
             path(
                 stroke = SolidColor(Color.Black),
-                strokeLineWidth = 9f,
+                strokeLineWidth = 12f,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round,
             ) {
