@@ -199,13 +199,31 @@ object ModelRepository {
         }
     }
 
+    /**
+     * The model to load, which is not simply [ModelCatalog.default].
+     *
+     * Anyone who never opened the translators screen has no selection file, so they
+     * are implicitly on whatever the catalog calls newest — and the moment a release
+     * adds a newer entry, that name points at a file they do not have. Falling
+     * straight through to the default then announces NO TRANSLATOR YET and offers a
+     * gigabyte download to someone whose working model is sitting right there on
+     * disk. Keeping the superseded entry listed saves the *file*; this is what saves
+     * the use of it.
+     *
+     * So an absent or unrecognised selection resolves to the newest entry actually
+     * present, and only falls back to the default when the device holds nothing at
+     * all — where announcing that there is no translator is the truth.
+     */
     private fun readSelection(): ModelSpec {
         val file = Path(modelsDirectory(), SELECTION_FILE)
         val id = runCatching {
             SystemFileSystem.source(file).buffered().use { it.readString() }.trim()
         }.getOrNull()
-        return ModelCatalog.byId(id) ?: ModelCatalog.default
+        ModelCatalog.byId(id)?.let { return it }
+        return ModelCatalog.entries.firstOrNull { onDisk(it) } ?: ModelCatalog.default
     }
+
+    private fun onDisk(spec: ModelSpec) = SystemFileSystem.metadataOrNull(fileOf(spec)) != null
 
     private fun writeSelection(spec: ModelSpec) {
         val file = Path(modelsDirectory(), SELECTION_FILE)

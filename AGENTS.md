@@ -63,6 +63,19 @@ next launch; it now only removes files ending in `.gguf`/`.gguf.part`. Anything 
 stored beside the models is safe, but a sweep that defaults to deleting is not —
 leave that predicate alone.
 
+**Adding a newer catalog entry strands everyone who never chose a model.** There is
+no `selected-model` file until someone picks one on the translators screen, so most
+people are implicitly on `ModelCatalog.default` — and the release that puts a newer
+entry at the top of the list moves that name onto a file they do not have. Marking
+the old entry `deprecated` keeps the *file* (`removeUnknownFiles()` spares anything
+the catalog still claims), but on its own it does not keep the *use* of it: the app
+came up saying NO TRANSLATOR YET and offering a 1.29 GiB download on a phone with a
+working 1.29 GiB model already on disk. `readSelection()` therefore falls back to
+the newest entry actually present, and only to the default when the device holds
+nothing at all. The update dot still lights, which is the right amount of pressure.
+Found by installing over a real phone's existing install — a fresh emulator cannot
+show it, because there the default genuinely is missing.
+
 **Space Grotesk is Latin-only and has no `‹` `›`.** Cyrillic falls through to the
 platform font, which is fine and intended (Russian is one of the three languages).
 The guillemets are not: typing them gets a mismatched fallback glyph, so every
