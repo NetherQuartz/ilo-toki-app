@@ -370,6 +370,17 @@ submodule update.
 
 ## Workflows
 
+**A second model on the same machine used to come out as the first.** The download
+cache in `merge-and-quantize.sh` was keyed on the *role* — `$WORK/adapter` — so the
+directory left over from the previous run was reused and the new repo was never
+fetched. The build succeeded, the quantizations were the right size and the name on
+the files was the new one; the only signs were that the merge probe printed the
+same sentence as last time and `mean |delta|` on the trained rows matched to the
+last digit. It is keyed on the repo id now, but the general lesson stands: check a
+merge with numbers, not by whether the pipeline exited zero. `scripts/merge_lora.py`
+prints the probe for exactly this reason, and the row/`lm_head` check in the merge
+trap above is what confirms it.
+
 **Producing a model** — base + adapter to the GGUF files the app downloads:
 
 ```shell
@@ -397,9 +408,16 @@ On iOS use the simulator control tool; its coordinate space is points, not pixel
 run prompts through it. That is the same code path the app uses, so it catches
 merge and format problems that a transformers-only check would not.
 
-**Comparing two models is a host job, not an emulator one.** Same quantization on
-both sides or the comparison means nothing. The tool is `llama-completion`, not
-`llama-cli`: upstream moved raw completion there, and `llama-cli` is now a chat
+**Comparing models is a host job, not an emulator one.**
+[scripts/compare-models.py](scripts/compare-models.py) takes any number of
+`--model label=path.gguf` and runs one set of 103 prompts through each: ordinary
+translation both ways across the three languages, fourteen bare/marked punctuation
+pairs, and the constructions past releases went wrong on. Reference GGUFs live in
+`build/compare/` — outside git, and worth keeping, since re-fetching 1.0 and 1.1
+is 2.8 GB.
+
+Same quantization on both sides or the comparison means nothing. The tool is
+`llama-completion`, not `llama-cli`: upstream moved raw completion there, and `llama-cli` is now a chat
 CLI that is only built with `-DLLAMA_BUILD_SERVER=ON` — configure with
 `-DLLAMA_BUILD_TOOLS=ON` and build the `llama-completion` target. Feed the prompt
 with `-f` rather than `-p` (it has newlines in it), and add `--no-display-prompt`,
@@ -539,32 +557,33 @@ fine, and CPU and Metal agree on this model to within a word.
 
 ## Current state
 
-*Last updated: 2026-08-05.*
+*Last updated: 2026-08-06.*
 
-- Model: [ilo-toki-1.1-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-1.1-MiLMMT-46-1b-merged),
-  one repository holding the merged weights and four quantizations. 1.0
-  ([ilo-toki-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-MiLMMT-46-1b-merged))
-  is still in the catalog, marked `deprecated`, and should be dropped a release
-  later. Same base and same prompt format, so `PromptStyle.SourceTarget` covers both.
-- **1.1 is better on balance, not on every axis**, measured over 95 prompts in both
-  directions across the three languages, Q8_0 against Q8_0. Fixed: `jan` no longer
-  comes back as Minecraft interface text (1.0: `jan li tawa ma` → «Player moves»,
-  `jan li pali e tomo` → «Building a Structure»; there is no Minecraft corpus in
-  1.1), clauses are no longer dropped from longer inputs, and terminal punctuation
-  barely moves the answer any more — it was dropped with p = 0.25 during training,
-  and 1.0 could flip meaning on it. Regressed: `la` is often read as a conditional
-  «if», `sona e toki pona` can answer about the wrong language («I know Russian»),
-  and short inputs pick up invented specifics. Separately, and more systematic than
-  it first looked: **1.1 resolves everything the source leaves unmarked to a fixed
-  default instead of reading it off the context.** Bare `mi` comes back as «we» in
-  six of seven sentences where 1.0 said «I», unmarked verbs tend to come back past,
-  and `la` tends to come back conditional. None of these is an *error* — `mi` covers
-  «we» and `mi mute` is optional, so filtering such pairs out of the training data
-  would be throwing away good ones — but consistently picking the less expected of
-  two valid readings is still a behaviour change worth knowing about. On a
-  head-count of the general set the two are near enough level; 1.1 wins because
-  `jan` is in a large share of all sentences and short bare sentences are the
-  common case, while its own failures need rarer constructions.
+- Model: [ilo-toki-1.3-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-1.3-MiLMMT-46-1b-merged),
+  the checkpoint at 15 000 steps. 1.1 and 1.0 are still in the catalog, both marked
+  `deprecated`; 1.0 has been deprecated for a release and could be dropped, but
+  dropping an entry deletes the file from anyone still on it, so that is its own
+  decision. Same base and same prompt format throughout, so
+  `PromptStyle.SourceTarget` covers all three.
+- **What 1.3 fixed, measured over 103 prompts against 1.0 and 1.1, Q8_0 throughout.**
+  `sona e toki pona` no longer answers about Russian; the invented specifics are
+  gone (1.1 put `jan li moku e kili` in «the state of Oregon» in Vietnamese); and
+  terminal punctuation moves the answer on one of fourteen bare/marked pairs against
+  1.1's five and 1.0's seven. Unfixed and inherited: `ala` reversed on two of ten
+  negation probes — the same two 1.1 gets wrong — «Что ты делаешь» without a
+  question mark, `la` read as a conditional, and bare `mi` coming back as «we».
+- **Which checkpoint matters more than which version.** Every 1.2 and 1.3 build was
+  measured at several steps: instability to punctuation grows monotonically past
+  about 15 000 steps, which is roughly where the validation loss turns. Substantive
+  punctuation-driven changes out of fourteen pairs, by checkpoint: 1.2 at 15k zero,
+  1.3 at 15k one, 1.3 at 17.5k three, 1.2 at 20k four, 1.2 averaged over 20k+25k
+  five. Take the checkpoint at the validation minimum, not the end of training, and
+  log finely enough to find it — at a 5 000-step cadence the minimum is a guess.
+- **1.2 was never released and cannot be rebuilt.** Its best checkpoint, 15k, was
+  the only build to get all ten negation probes right, but its `x`↔`y` subset was
+  sampled with `hash((id(row), …))` — a memory address, randomised per process — so
+  the exact training set is unrecoverable. 1.3 onward samples deterministically and
+  its runs are comparable to each other.
 - **The «sitelen» redesign is on `main`**, merged as
   [#3](https://github.com/NetherQuartz/ilo-toki-app/pull/3). Four screens (translator, settings,
   translators, history) plus an about overlay, own primitives and tokens instead of
@@ -610,8 +629,34 @@ Open:
   `local.properties` or the environment — never from a committed file. `versionCode`
   is still 1 and has to start moving once updates are a thing.
 
-- **What the next training round should address.** Three things, all 1.1's, all
-  visible in the comparison log. `la` is read as a conditional — `mi wile lape la mi
+- **`ala` is reversed or dropped by the shipped model, and nobody had looked.**
+  1.1 turns `jan li lape ala` into «someone is sleeping» and `mi pilin ike la mi
+  moku ala` into «eat something light» — two of eight negation probes, both the
+  opposite of what was said. 1.3 does the same two; 1.2 at 15k was the only build
+  that got all eight, and its training data is not reproducible, so that cannot be
+  aimed at. Negation is a block in
+  [scripts/compare-models.py](scripts/compare-models.py) now, because it was found
+  by chance inside another probe and `ala` is far too common to leave to chance.
+  A confidently reversed negation is worse than visible nonsense: nothing about the
+  answer says it is wrong.
+
+- **`la` and unmarked number survive every version so far.** Neither 1.1 nor any
+  1.2 checkpoint reads `la` as anything but a conditional where the relation is
+  causal, and bare `mi` keeps coming back as «we». They are untouched by the
+  punctuation work and need their own round. The rest of this entry is what was
+  written after 1.1 and still applies.
+
+- **What the next training round should address, in this order.** `ala` reversed —
+  `jan li lape ala` comes back as «someone is sleeping» and `mi pilin ike la mi moku
+  ala` as «I eat too much». A fluent sentence meaning the opposite is the worst
+  failure this app can produce, 1.3 still has it, and there is now a negation block
+  in the harness to tell whether a round fixed it. Then `la`, then «Что ты делаешь»
+  without a question mark, which is the last phrase the 1.2 line broke and 1.3 did
+  not fully recover.
+
+  The rest below was written after 1.1. `sona e toki pona` and the invented
+  specifics are **fixed** as of 1.3 and are kept only for the reasoning about why
+  they happened; `la` still stands. `la` is read as a conditional — `mi wile lape la mi
   tawa tomo` gives "If I want to sleep then I go home", and the second clause is
   sometimes mangled along with it; 1.0 handled `la` better, so something in its mix
   covered this and got diluted, and diffing the `la` subsets of the two mixes is the

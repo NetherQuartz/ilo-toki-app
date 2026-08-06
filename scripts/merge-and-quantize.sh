@@ -54,12 +54,18 @@ source "$VENV/bin/activate"
 export HF_HUB_DISABLE_XET=1
 
 # Downloads <repo> unless it is already a directory on disk.
+#
+# The cache directory is named after the repo, not after the role it plays. Keying
+# it on «adapter» instead silently reuses whatever was downloaded last time: the
+# second model built on this machine came out byte-identical to the first, and the
+# only sign was that the merge probe printed the same sentence.
 resolve() {
-    local spec="$1" dir="$2"
+    local spec="$1" role="$2"
     if [[ -d "$spec" ]]; then
         echo "$spec"
         return
     fi
+    local dir="$WORK/$role-${spec//\//_}"
     if [[ ! -d "$dir" ]]; then
         echo "==> downloading $spec" >&2
         for attempt in $(seq 1 20); do
@@ -71,13 +77,25 @@ resolve() {
     echo "$dir"
 }
 
-BASE_DIR="$(resolve "$BASE" "$WORK/base")"
-ADAPTER_DIR="$(resolve "$ADAPTER" "$WORK/adapter")"
+BASE_DIR="$(resolve "$BASE" base)"
+ADAPTER_DIR="$(resolve "$ADAPTER" adapter)"
 
-MERGED="$OUT/merged"
-if [[ ! -f "$MERGED/model.safetensors" ]]; then
+# Reusing merged weights is only safe when they came from the same two inputs, and
+# «the directory exists» does not say that. Skipping the merge because a previous
+# run left one behind is how a build of one model came out as another — twice, and
+# the quantizations were the right size and carried the new name both times. The
+# stamp records what produced these weights; anything else re-merges.
+MERGED="$OUT/merged-$NAME"
+STAMP="$MERGED/.inputs"
+# Content, not paths. A repository that is overwritten keeps its name, so a stamp
+# made of directory names says «same inputs» about different weights — which is the
+# same mistake one level up from the one this stamp was added to prevent.
+WANT="$BASE_DIR|$ADAPTER_DIR|$(find "$ADAPTER_DIR" -name '*.safetensors' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)"
+if [[ ! -f "$MERGED/model.safetensors" || "$(cat "$STAMP" 2>/dev/null)" != "$WANT" ]]; then
     echo "==> merging"
+    rm -rf "$MERGED"
     python "$ROOT/scripts/merge_lora.py" "$BASE_DIR" "$ADAPTER_DIR" "$MERGED"
+    printf '%s' "$WANT" > "$STAMP"
 fi
 
 F16="$WORK/$NAME-f16.gguf"
