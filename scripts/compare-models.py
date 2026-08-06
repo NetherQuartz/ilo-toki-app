@@ -199,6 +199,23 @@ FOCUS = {
         ("jan lili li lukin e waso lon sewi", True, "English"),
         ("mi lon tomo nanpa tu", True, "English"),
     ],
+    # `ala` negates the word before it and is one of the commonest things in the
+    # language, so a model that drops or reverses it is confidently wrong about
+    # everyday sentences. Both 1.1 and 1.3 turn `jan li lape ala` into «someone is
+    # sleeping»; it went unnoticed until a negation happened to appear inside
+    # another probe, which is exactly why it is a block of its own now.
+    "negation": [
+        ("mi moku ala", True, "English"),
+        ("mi wile ala tawa", True, "English"),
+        ("sina sona ala e ni", True, "English"),
+        ("jan li lape ala", True, "English"),
+        ("mi ken ala toki", True, "English"),
+        ("ona li pona ala", True, "English"),
+        ("soweli li moku ala e kili", True, "English"),
+        ("mi pilin ike la mi moku ala", True, "English"),
+        ("jan li lape ala", True, "Russian"),
+        ("mi wile ala moku", True, "Russian"),
+    ],
     "rarer particles": [
         ("tomo pi telo nasa li lon poka mi", True, "English"),
         ("jan pi ma ante li kama", True, "English"),

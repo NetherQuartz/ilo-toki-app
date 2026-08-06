@@ -660,6 +660,17 @@ Open:
   `local.properties` or the environment — never from a committed file. `versionCode`
   is still 1 and has to start moving once updates are a thing.
 
+- **`ala` is reversed or dropped by the shipped model, and nobody had looked.**
+  1.1 turns `jan li lape ala` into «someone is sleeping» and `mi pilin ike la mi
+  moku ala` into «eat something light» — two of eight negation probes, both the
+  opposite of what was said. 1.3 does the same two; 1.2 at 15k was the only build
+  that got all eight, and its training data is not reproducible, so that cannot be
+  aimed at. Negation is a block in
+  [scripts/compare-models.py](scripts/compare-models.py) now, because it was found
+  by chance inside another probe and `ala` is far too common to leave to chance.
+  A confidently reversed negation is worse than visible nonsense: nothing about the
+  answer says it is wrong.
+
 - **`la` and unmarked number survive every version so far.** Neither 1.1 nor any
   1.2 checkpoint reads `la` as anything but a conditional where the relation is
   causal, and bare `mi` keeps coming back as «we». They are untouched by the
