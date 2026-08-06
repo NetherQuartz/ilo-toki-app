@@ -87,7 +87,10 @@ ADAPTER_DIR="$(resolve "$ADAPTER" adapter)"
 # stamp records what produced these weights; anything else re-merges.
 MERGED="$OUT/merged-$NAME"
 STAMP="$MERGED/.inputs"
-WANT="$BASE_DIR|$ADAPTER_DIR"
+# Content, not paths. A repository that is overwritten keeps its name, so a stamp
+# made of directory names says «same inputs» about different weights — which is the
+# same mistake one level up from the one this stamp was added to prevent.
+WANT="$BASE_DIR|$ADAPTER_DIR|$(find "$ADAPTER_DIR" -name '*.safetensors' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)"
 if [[ ! -f "$MERGED/model.safetensors" || "$(cat "$STAMP" 2>/dev/null)" != "$WANT" ]]; then
     echo "==> merging"
     rm -rf "$MERGED"
