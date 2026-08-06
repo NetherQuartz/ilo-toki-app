@@ -80,10 +80,19 @@ resolve() {
 BASE_DIR="$(resolve "$BASE" base)"
 ADAPTER_DIR="$(resolve "$ADAPTER" adapter)"
 
-MERGED="$OUT/merged"
-if [[ ! -f "$MERGED/model.safetensors" ]]; then
+# Reusing merged weights is only safe when they came from the same two inputs, and
+# «the directory exists» does not say that. Skipping the merge because a previous
+# run left one behind is how a build of one model came out as another — twice, and
+# the quantizations were the right size and carried the new name both times. The
+# stamp records what produced these weights; anything else re-merges.
+MERGED="$OUT/merged-$NAME"
+STAMP="$MERGED/.inputs"
+WANT="$BASE_DIR|$ADAPTER_DIR"
+if [[ ! -f "$MERGED/model.safetensors" || "$(cat "$STAMP" 2>/dev/null)" != "$WANT" ]]; then
     echo "==> merging"
+    rm -rf "$MERGED"
     python "$ROOT/scripts/merge_lora.py" "$BASE_DIR" "$ADAPTER_DIR" "$MERGED"
+    printf '%s' "$WANT" > "$STAMP"
 fi
 
 F16="$WORK/$NAME-f16.gguf"
