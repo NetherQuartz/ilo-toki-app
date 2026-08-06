@@ -47,6 +47,16 @@ data class ModelSpec(
 object ModelCatalog {
     val entries: List<ModelSpec> = listOf(
         ModelSpec(
+            id = "milmmt-46-1b-v1-3-q8-0",
+            displayName = "ilo-toki-1.3-MiLMMT-46-1b",
+            quantization = "Q8_0",
+            fileName = "ilo-toki-1.3-MiLMMT-46-1b-Q8_0.gguf",
+            url = "https://huggingface.co/NetherQuartz/ilo-toki-1.3-MiLMMT-46-1b-merged/" +
+                "resolve/main/ilo-toki-1.3-MiLMMT-46-1b-Q8_0.gguf",
+            sizeBytes = 1_390_169_920L,
+            promptStyle = PromptStyle.SourceTarget,
+        ),
+        ModelSpec(
             id = "milmmt-46-1b-v1-1-q8-0",
             displayName = "ilo-toki-1.1-MiLMMT-46-1b",
             quantization = "Q8_0",
@@ -55,6 +65,7 @@ object ModelCatalog {
                 "resolve/main/ilo-toki-1.1-MiLMMT-46-1b-Q8_0.gguf",
             sizeBytes = 1_390_169_824L,
             promptStyle = PromptStyle.SourceTarget,
+            deprecated = true,
         ),
         ModelSpec(
             id = "milmmt-46-1b-q8-0",

@@ -557,32 +557,33 @@ fine, and CPU and Metal agree on this model to within a word.
 
 ## Current state
 
-*Last updated: 2026-08-05.*
+*Last updated: 2026-08-06.*
 
-- Model: [ilo-toki-1.1-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-1.1-MiLMMT-46-1b-merged),
-  one repository holding the merged weights and four quantizations. 1.0
-  ([ilo-toki-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-MiLMMT-46-1b-merged))
-  is still in the catalog, marked `deprecated`, and should be dropped a release
-  later. Same base and same prompt format, so `PromptStyle.SourceTarget` covers both.
-- **1.1 is better on balance, not on every axis**, measured over 95 prompts in both
-  directions across the three languages, Q8_0 against Q8_0. Fixed: `jan` no longer
-  comes back as Minecraft interface text (1.0: `jan li tawa ma` → «Player moves»,
-  `jan li pali e tomo` → «Building a Structure»; there is no Minecraft corpus in
-  1.1), clauses are no longer dropped from longer inputs, and terminal punctuation
-  barely moves the answer any more — it was dropped with p = 0.25 during training,
-  and 1.0 could flip meaning on it. Regressed: `la` is often read as a conditional
-  «if», `sona e toki pona` can answer about the wrong language («I know Russian»),
-  and short inputs pick up invented specifics. Separately, and more systematic than
-  it first looked: **1.1 resolves everything the source leaves unmarked to a fixed
-  default instead of reading it off the context.** Bare `mi` comes back as «we» in
-  six of seven sentences where 1.0 said «I», unmarked verbs tend to come back past,
-  and `la` tends to come back conditional. None of these is an *error* — `mi` covers
-  «we» and `mi mute` is optional, so filtering such pairs out of the training data
-  would be throwing away good ones — but consistently picking the less expected of
-  two valid readings is still a behaviour change worth knowing about. On a
-  head-count of the general set the two are near enough level; 1.1 wins because
-  `jan` is in a large share of all sentences and short bare sentences are the
-  common case, while its own failures need rarer constructions.
+- Model: [ilo-toki-1.3-MiLMMT-46-1b-merged](https://huggingface.co/NetherQuartz/ilo-toki-1.3-MiLMMT-46-1b-merged),
+  the checkpoint at 15 000 steps. 1.1 and 1.0 are still in the catalog, both marked
+  `deprecated`; 1.0 has been deprecated for a release and could be dropped, but
+  dropping an entry deletes the file from anyone still on it, so that is its own
+  decision. Same base and same prompt format throughout, so
+  `PromptStyle.SourceTarget` covers all three.
+- **What 1.3 fixed, measured over 103 prompts against 1.0 and 1.1, Q8_0 throughout.**
+  `sona e toki pona` no longer answers about Russian; the invented specifics are
+  gone (1.1 put `jan li moku e kili` in «the state of Oregon» in Vietnamese); and
+  terminal punctuation moves the answer on one of fourteen bare/marked pairs against
+  1.1's five and 1.0's seven. Unfixed and inherited: `ala` reversed on two of ten
+  negation probes — the same two 1.1 gets wrong — «Что ты делаешь» without a
+  question mark, `la` read as a conditional, and bare `mi` coming back as «we».
+- **Which checkpoint matters more than which version.** Every 1.2 and 1.3 build was
+  measured at several steps: instability to punctuation grows monotonically past
+  about 15 000 steps, which is roughly where the validation loss turns. Substantive
+  punctuation-driven changes out of fourteen pairs, by checkpoint: 1.2 at 15k zero,
+  1.3 at 15k one, 1.3 at 17.5k three, 1.2 at 20k four, 1.2 averaged over 20k+25k
+  five. Take the checkpoint at the validation minimum, not the end of training, and
+  log finely enough to find it — at a 5 000-step cadence the minimum is a guess.
+- **1.2 was never released and cannot be rebuilt.** Its best checkpoint, 15k, was
+  the only build to get all ten negation probes right, but its `x`↔`y` subset was
+  sampled with `hash((id(row), …))` — a memory address, randomised per process — so
+  the exact training set is unrecoverable. 1.3 onward samples deterministically and
+  its runs are comparable to each other.
 - **The «sitelen» redesign is on `main`**, merged as
   [#3](https://github.com/NetherQuartz/ilo-toki-app/pull/3). Four screens (translator, settings,
   translators, history) plus an about overlay, own primitives and tokens instead of
@@ -620,38 +621,6 @@ fine, and CPU and Metal agree on this model to within a word.
   stored (`~/.cache/huggingface/token`), but `hf` is only installed in the pyenv env
   `ilo-toki`; from the default 3.12.2 the shim fails with «command not found».
 
-- **1.2 is not released, and the investigation into it is the live piece of work.**
-  Three checkpoints of it were built and measured against 1.0 and 1.1 on the 103
-  prompts, Q8_0 throughout. What 1.2 fixes is real: `sona e toki pona` answers about
-  toki pona again, `jan` keeps its subject and the Vietnamese «bang Oregon» is gone.
-  What it breaks is «What are you doing?» and «Что ты делаешь?» into toki pona,
-  which 1.0 and 1.1 both get right — the reverse direction, which is what the app's
-  own sample chip uses, is fine.
-
-  The checkpoint matters more than the version. Substantive punctuation-driven
-  changes, out of fourteen pairs: 1.0 seven, 1.1 five, **1.2 at 15k zero**, 1.2 at
-  20k four, the released 20k+25k average five. 15k is the best checkpoint of the
-  whole family and beats 1.1 on balance; 20k and later are where the instability
-  appears. `mean |delta|` over the trained embedding rows rises monotonically with
-  steps — 11.97 at 15k, 12.74 at 20k, 12.97 for the average — which is a cheap way
-  to tell three checkpoints of one model apart.
-
-  The diagnosis, from the 15k → 20k step: `maybe_strip_trailing_punct` strips `.`,
-  `?` and `!` from the *source* with p = 0.25 while the target keeps its meaning, so
-  a stripped question becomes a declarative source mapped to an interrogative
-  target — label noise rather than augmentation. At 15k neither form of «What are
-  you doing» is learned; by 20k the model has learned exactly the form it saw and
-  not the other. Halving the `x`↔`y` pairs in 1.2 raised the share of `tok`↔`x`
-  pairs, which is where that noise lives, so it was learned harder than in 1.1.
-
-  A run is in flight testing this: `.` only, everything else as in 1.2. It confirms
-  the diagnosis if «What are you doing?» is right in both forms at every checkpoint,
-  substantive punctuation changes go to zero while cosmetic ones may remain, the 15k
-  wins survive, and `la` and `mi`→«we» do **not** move — those two are untouched by
-  it and shift only if something else did. Note before comparing runs: the `x`↔`y`
-  sampler keys on `hash((id(row), …))`, an address, so the subset differs between
-  runs and no two are strictly single-factor until that is made deterministic.
-
 Open:
 
 - **A real release keystore, before anything is distributed.** `keytool -genkeypair`
@@ -677,8 +646,17 @@ Open:
   punctuation work and need their own round. The rest of this entry is what was
   written after 1.1 and still applies.
 
-- **What the next training round should address.** Three things, all 1.1's, all
-  visible in the comparison log. `la` is read as a conditional — `mi wile lape la mi
+- **What the next training round should address, in this order.** `ala` reversed —
+  `jan li lape ala` comes back as «someone is sleeping» and `mi pilin ike la mi moku
+  ala` as «I eat too much». A fluent sentence meaning the opposite is the worst
+  failure this app can produce, 1.3 still has it, and there is now a negation block
+  in the harness to tell whether a round fixed it. Then `la`, then «Что ты делаешь»
+  without a question mark, which is the last phrase the 1.2 line broke and 1.3 did
+  not fully recover.
+
+  The rest below was written after 1.1. `sona e toki pona` and the invented
+  specifics are **fixed** as of 1.3 and are kept only for the reasoning about why
+  they happened; `la` still stands. `la` is read as a conditional — `mi wile lape la mi
   tawa tomo` gives "If I want to sleep then I go home", and the second clause is
   sometimes mangled along with it; 1.0 handled `la` better, so something in its mix
   covered this and got diluted, and diffing the `la` subsets of the two mixes is the
