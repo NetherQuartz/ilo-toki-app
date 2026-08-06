@@ -408,9 +408,16 @@ On iOS use the simulator control tool; its coordinate space is points, not pixel
 run prompts through it. That is the same code path the app uses, so it catches
 merge and format problems that a transformers-only check would not.
 
-**Comparing two models is a host job, not an emulator one.** Same quantization on
-both sides or the comparison means nothing. The tool is `llama-completion`, not
-`llama-cli`: upstream moved raw completion there, and `llama-cli` is now a chat
+**Comparing models is a host job, not an emulator one.**
+[scripts/compare-models.py](scripts/compare-models.py) takes any number of
+`--model label=path.gguf` and runs one set of 103 prompts through each: ordinary
+translation both ways across the three languages, fourteen bare/marked punctuation
+pairs, and the constructions past releases went wrong on. Reference GGUFs live in
+`build/compare/` — outside git, and worth keeping, since re-fetching 1.0 and 1.1
+is 2.8 GB.
+
+Same quantization on both sides or the comparison means nothing. The tool is
+`llama-completion`, not `llama-cli`: upstream moved raw completion there, and `llama-cli` is now a chat
 CLI that is only built with `-DLLAMA_BUILD_SERVER=ON` — configure with
 `-DLLAMA_BUILD_TOOLS=ON` and build the `llama-completion` target. Feed the prompt
 with `-f` rather than `-p` (it has newlines in it), and add `--no-display-prompt`,
@@ -613,6 +620,38 @@ fine, and CPU and Metal agree on this model to within a word.
   stored (`~/.cache/huggingface/token`), but `hf` is only installed in the pyenv env
   `ilo-toki`; from the default 3.12.2 the shim fails with «command not found».
 
+- **1.2 is not released, and the investigation into it is the live piece of work.**
+  Three checkpoints of it were built and measured against 1.0 and 1.1 on the 103
+  prompts, Q8_0 throughout. What 1.2 fixes is real: `sona e toki pona` answers about
+  toki pona again, `jan` keeps its subject and the Vietnamese «bang Oregon» is gone.
+  What it breaks is «What are you doing?» and «Что ты делаешь?» into toki pona,
+  which 1.0 and 1.1 both get right — the reverse direction, which is what the app's
+  own sample chip uses, is fine.
+
+  The checkpoint matters more than the version. Substantive punctuation-driven
+  changes, out of fourteen pairs: 1.0 seven, 1.1 five, **1.2 at 15k zero**, 1.2 at
+  20k four, the released 20k+25k average five. 15k is the best checkpoint of the
+  whole family and beats 1.1 on balance; 20k and later are where the instability
+  appears. `mean |delta|` over the trained embedding rows rises monotonically with
+  steps — 11.97 at 15k, 12.74 at 20k, 12.97 for the average — which is a cheap way
+  to tell three checkpoints of one model apart.
+
+  The diagnosis, from the 15k → 20k step: `maybe_strip_trailing_punct` strips `.`,
+  `?` and `!` from the *source* with p = 0.25 while the target keeps its meaning, so
+  a stripped question becomes a declarative source mapped to an interrogative
+  target — label noise rather than augmentation. At 15k neither form of «What are
+  you doing» is learned; by 20k the model has learned exactly the form it saw and
+  not the other. Halving the `x`↔`y` pairs in 1.2 raised the share of `tok`↔`x`
+  pairs, which is where that noise lives, so it was learned harder than in 1.1.
+
+  A run is in flight testing this: `.` only, everything else as in 1.2. It confirms
+  the diagnosis if «What are you doing?» is right in both forms at every checkpoint,
+  substantive punctuation changes go to zero while cosmetic ones may remain, the 15k
+  wins survive, and `la` and `mi`→«we» do **not** move — those two are untouched by
+  it and shift only if something else did. Note before comparing runs: the `x`↔`y`
+  sampler keys on `hash((id(row), …))`, an address, so the subset differs between
+  runs and no two are strictly single-factor until that is made deterministic.
+
 Open:
 
 - **A real release keystore, before anything is distributed.** `keytool -genkeypair`
@@ -620,6 +659,12 @@ Open:
   [build.gradle.kts](composeApp/build.gradle.kts) reading its passwords from
   `local.properties` or the environment — never from a committed file. `versionCode`
   is still 1 and has to start moving once updates are a thing.
+
+- **`la` and unmarked number survive every version so far.** Neither 1.1 nor any
+  1.2 checkpoint reads `la` as anything but a conditional where the relation is
+  causal, and bare `mi` keeps coming back as «we». They are untouched by the
+  punctuation work and need their own round. The rest of this entry is what was
+  written after 1.1 and still applies.
 
 - **What the next training round should address.** Three things, all 1.1's, all
   visible in the comparison log. `la` is read as a conditional — `mi wile lape la mi
