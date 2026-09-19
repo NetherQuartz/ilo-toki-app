@@ -499,6 +499,7 @@ private fun SourcePlate(
     // of its 137 words is in any dictionary, so capitalization, autocorrect and the
     // suggestion strip have nothing to offer and plenty to corrupt; the other
     // language is exactly the case the keyboard was built for and keeps all three.
+    // The strip is only asked to go — Gboard shows it anyway; see [PlainKeyboard].
     // The layout is asked for by name either way — a phone left in Cyrillic cannot
     // type toki pona at all, and one left in English is a poor way to type Russian.
     //
@@ -533,9 +534,10 @@ private fun SourcePlate(
                         // Ascii is the only way to ask iOS for a latin layout at
                         // all: it has no hint locales, and with plain Text the
                         // toki pona side came up ЙЦУКЕН on a phone whose last
-                        // keyboard was Russian. It costs Android nothing — the
-                        // input type is the same as Text, plus a FORCE_ASCII flag
-                        // that agrees with the hint below.
+                        // keyboard was Russian. On iOS it also takes the QuickType
+                        // bar away, which is wanted here. It costs Android nothing
+                        // — the input type is the same as Text, plus a FORCE_ASCII
+                        // flag that agrees with the hint below.
                         keyboardType = if (fromTokiPona) {
                             KeyboardType.Ascii
                         } else {

@@ -375,6 +375,18 @@ obvious and both were bugs first: the flag has to be `or`-ed on *after*
 outright and would overwrite it; and the interceptor must be `remember(enabled)`,
 since it lives in a `MutableState` the session collects and handing over a new
 instance is the only thing that restarts the input method with fresh attributes.
+
+**And Gboard ignores the flag anyway.** On a Pixel 6 (Gboard 18.1.3) the strip kept
+offering «mi | missing | might» for `mi`, with `NO_SUGGESTIONS` plainly in the
+`EditorInfo` — the dump says it was sent, the screen says it was ignored, and the
+emulator cannot show either, because Gboard there drew no keyboard at all. The
+interceptor stays for the keyboards that do honour it. The one thing Gboard obeys
+is `TYPE_TEXT_VARIATION_VISIBLE_PASSWORD`: tried, and the strip goes — along with
+the emoji key and voice input, and with a row of digits added. Turned down, because
+toki pona must not get a different-looking keyboard from every other language, and
+a strip nobody has to tap is the lesser cost. Autocorrect and capitalization, which
+are what actually corrupt the input, are off on Gboard as intended.
+
 iOS needs none of that: there `autoCorrectEnabled` goes to UIKit as
 `autocorrectionType = .no`, and `KeyboardType.Ascii` — see below — removes the
 QuickType bar outright, keyboard and all. Screenshot both before believing either.
@@ -393,20 +405,21 @@ Nothing asks iOS for a *language*, so the other side gets whatever layout was la
 up and the globe key. That is the platform, not a gap in the code; do not go looking
 for the API again.
 
-`KeyboardOptions.hintLocales` is the Android half of it, and it does reach the plain
-`BasicTextField(value:…)`: the legacy path goes through foundation's own
-`EditorInfo.update()` rather than through `TextInputServiceAndroid`, and that is
-where the hint is applied.
+`KeyboardOptions.hintLocales` is the Android half of it, and Gboard does follow it:
+on the Pixel 6, picking Russian switched the keyboard to ЙЦУКЕН and going back to
+toki pona switched it to English. It can only choose among the languages installed
+on the phone. It reaches the plain `BasicTextField(value:…)` because the legacy
+path goes through foundation's own `EditorInfo.update()` rather than through
+`TextInputServiceAndroid`, and that is where the hint is applied.
 
 Read back what was actually sent rather than trusting the code: focus the field and
 `adb shell dumpsys input_method | grep -A7 curEditorInfo`. Toki pona should give
 `inputType=0xa0001` (`TEXT|MULTI_LINE|NO_SUGGESTIONS`), `imeOptions=0x82000006` (the
 top bit being FORCE_ASCII) and `hintLocales=[en]`; the other side `0x2c001`
-(`TEXT|MULTI_LINE|AUTO_CORRECT|CAP_SENTENCES`), `0x2000006` and its own tag. Whether
-Gboard then *shows* that layout is Gboard's business and depends on which languages
-the phone has installed; the hint is a request, as in Duolingo. To see a soft
-keyboard at all: on the emulator Gboard may not draw one — the dump is the check
-that matters — and on the simulator it needs
+(`TEXT|MULTI_LINE|AUTO_CORRECT|CAP_SENTENCES`), `0x2000006` and its own tag. That
+proves what was *asked*; what the keyboard *does* with it takes a real phone and
+a look at the screen, as the Gboard note above shows. On the simulator a soft
+keyboard needs
 `defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false`
 and a restart of Simulator.
 
@@ -652,14 +665,14 @@ fine, and CPU and Metal agree on this model to within a word.
   deletion, translation in all three languages both ways. The redesign itself was
   walked through on an iPhone 17 Pro simulator and a Pixel 9 emulator: first run,
   download start/pause/resume, translation, script flip, history, both themes.
-- The keyboard is done on both platforms and checked on both. Pixel 9 emulator:
-  `dumpsys input_method` for each side, and the swapped-in result checked for the
-  leading space. iPhone 17 Pro simulator: the toki pona side comes up latin with no
-  suggestion strip, the other side keeps its strip and its capitalization, and
-  `kasi li kama suli` → «Plant grows» swaps back into the input flush to the edge.
-  Not checked on a real phone yet — a physical Pixel is the one thing outstanding,
-  and the only thing it can add is which layout Gboard actually chooses from the
-  hint, since that depends on the languages installed.
+- The keyboard is checked on a Pixel 6, the Pixel 9 emulator and the iPhone 17 Pro
+  simulator. On the phone: no capitalization or autocorrect on the toki pona side,
+  Gboard's layout following the hint both ways, `kili li suwi` → «Fruits are
+  sweet.» swapped back into the input with no leading space (read from the UI
+  tree, not a screenshot) — and Gboard's suggestion strip still there, see the
+  Gboard note. On the simulator: latin and no strip for toki pona, strip and
+  capitalization for the other side, `kasi li kama suli` → «Plant grows» swapping
+  back flush to the edge.
 - The animations are in and frame-counted on a Pixel 6, a Pixel 9 emulator and an
   iPhone 17 Pro simulator: screen and card entrances, the popover, the segmented
   slide (240 ms), the toggle knob, the press sink (~85 ms), the slab's colour
