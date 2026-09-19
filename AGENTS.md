@@ -484,6 +484,29 @@ while iOS is not distributed, and it will need the same treatment when it is.
 A shallow clone has no tags and describes itself as `0.0.0-<sha>`, which is why
 every checkout in CI fetches the full history.
 
+**Merge pull requests with a merge commit, never a squash.** The release notes find
+a PR by its merge commit — the subject `Merge pull request #N from …` and the PR
+title on the body line — and group the branch's commits under it. A squash merge
+leaves one commit with neither, and the PR's work lands in «Straight to main» as a
+single line. And `gh pr merge` refuses any PR that touches `.github/workflows/`: the
+`gh` token has no `workflow` scope. Either `gh auth refresh -s workflow`, or merge
+locally in exactly that format — `git merge --no-ff origin/<branch> -m "Merge pull
+request #N from <owner>/<branch>" -m "<PR title>"` — and push over SSH, which is
+how the first Dependabot round went in. GitHub marks the PR merged by itself.
+
+**Do not declare outputs on `buildLlamaApple`.** CI restores `llm/build/llama-apple`
+from its cache, and on a runner with no Gradle history, files in a task's declared
+output directory that Gradle did not produce itself are stale: `--info` shows
+`Deleting stale output file: …/llm/build/llama-apple` right before the task, and
+every run rebuilt llama.cpp for both targets after a cache hit. The script decides
+staleness itself, instantly. A restored cache that saves nothing looks exactly like
+one that works until you read the log for `is up to date`.
+
+**Gradle is cached by `setup-java`, not `gradle/actions`.** From v6 the caching in
+`gradle/actions` is a proprietary component, and taking the bump means accepting
+Gradle's terms of use for it — not something to agree to by merging a Dependabot
+PR. `setup-java`'s `cache: gradle` does the same job under MIT.
+
 **Verifying on a device.** The emulator and simulator both lie about performance —
 memory pressure dominates, and neither reproduces a real phone's. For anything about
 speed use a physical device, and check `MemAvailable` and `SwapFree` in
@@ -716,6 +739,12 @@ fine, and CPU and Metal agree on this model to within a word.
   debug-signed one** — the signatures differ and Android asks for an uninstall
   first, which takes the downloaded model and the history with it. Phones that have
   been running debug builds meet that exactly once, on the first release.
+- **1.0.0 is released**, the first tag: [release](https://github.com/NetherQuartz/ilo-toki-app/releases/tag/1.0.0),
+  APK signed by `CN=Vladimir Larkin`, certificate SHA-256
+  `83094bf3d025edc999bbeb19c303341fcb1f9b1ada3d5745d6aff3679bdabee4` — every later
+  release must carry the same one, or it will not install over this. CI takes about
+  7 minutes on Android and 14 on iOS, most of the latter Kotlin/Native and Xcode;
+  llama.cpp itself comes from the cache.
 - `gh` is installed and authenticated as NetherQuartz. The Hugging Face token is
   stored (`~/.cache/huggingface/token`), but `hf` is only installed in the pyenv env
   `ilo-toki`; from the default 3.12.2 the shim fails with «command not found».
