@@ -32,7 +32,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
+          # Caches ~/.gradle keyed on the build files. Not gradle/actions: from v6 its
+          # caching is a proprietary component under Gradle's own terms of use.
+          cache: gradle
 
       - name: Install the NDK and CMake the build pins
         run: |
@@ -71,7 +73,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
+          # Caches ~/.gradle keyed on the build files. Not gradle/actions: from v6 its
+          # caching is a proprietary component under Gradle's own terms of use.
+          cache: gradle
 
       # llama.cpp for both iOS targets is the slowest thing in the whole build and
       # only changes with the submodule or the C core.
