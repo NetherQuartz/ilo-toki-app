@@ -64,11 +64,6 @@ actual fun modelsDirectory(): String =
 // so it is the figure that decides whether a download will actually fit.
 actual fun freeDiskBytes(): Long = runCatching { File(modelsDirectory()).usableSpace }.getOrDefault(0L)
 
-actual val appVersion: String
-    get() = runCatching {
-        appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName
-    }.getOrNull() ?: ""
-
 actual fun openUrl(url: String) {
     // A phone with no browser at all is possible; there is nothing useful to say
     // about it from an about card, so the tap simply does nothing.

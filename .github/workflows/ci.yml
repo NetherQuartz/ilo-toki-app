@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # The release workflow runs the same checks before it builds anything.
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push to a PR makes the older run pointless; main and tags run to the end.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android — build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the app's version is `git describe`.
+          fetch-depth: 0
+      - name: Check out llama.cpp at the pinned commit
+        run: git submodule update --init --depth 1
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install the NDK and CMake the build pins
+        run: |
+          ndk=$(sed -n 's/^android-ndk = "\(.*\)"/\1/p' gradle/libs.versions.toml)
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" "cmake;3.22.1" > /dev/null
+
+      - name: Test and build
+        run: ./gradlew :composeApp:testDebugUnitTest :composeApp:assembleDebug
+
+      - name: Keep the debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ilo-toki-debug-apk
+          path: composeApp/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+  ios:
+    name: iOS — build and test
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check out llama.cpp at the pinned commit
+        id: llama
+        run: |
+          git submodule update --init --depth 1
+          echo "sha=$(git rev-parse HEAD:llama.cpp)" >> "$GITHUB_OUTPUT"
+
+      # The app icon is an Icon Composer `.icon`, which needs Xcode 26 or later.
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+
+      # llama.cpp for both iOS targets is the slowest thing in the whole build and
+      # only changes with the submodule or the C core.
+      - name: Restore the iOS llama.cpp archives
+        id: llama-cache
+        uses: actions/cache@v4
+        with:
+          path: llm/build/llama-apple
+          key: llama-apple-${{ steps.llama.outputs.sha }}-${{ hashFiles('scripts/build-llama-apple.sh', 'llm/src/nativeCommon/cpp/**') }}
+      - name: Mark the restored archives as current
+        if: steps.llama-cache.outputs.cache-hit == 'true'
+        # build-llama-apple.sh decides by mtime, and a fresh checkout is newer than
+        # anything restored; the cache key already guarantees the contents match.
+        run: find llm/build/llama-apple -name '*.a' -exec touch {} +
+
+      - name: Test on the simulator
+        run: ./gradlew :composeApp:iosSimulatorArm64Test :llm:iosSimulatorArm64Test
+
+      - name: Build the app for a device, unsigned
+        run: |
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/xcode \
+            CODE_SIGNING_ALLOWED=NO build

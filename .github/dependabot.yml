@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # Keeps the actions the workflows pin moving; application dependencies are
+  # updated by hand, since a Compose or Kotlin bump needs a device check.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

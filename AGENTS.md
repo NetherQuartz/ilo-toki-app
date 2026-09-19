@@ -463,6 +463,27 @@ Then add or update the entry in
 Get the exact byte size from the URL rather than guessing:
 `curl -sIL <url> | grep -i x-linked-size`.
 
+**Releasing.** Push a bare semver tag from `main` — `1.4.0`, no `v` — and
+[release.yml](.github/workflows/release.yml) runs the whole of CI, builds the APK
+signed with the release key, and publishes a GitHub release with it, its sha256 and
+notes from [scripts/release-notes.sh](scripts/release-notes.sh). The notes are the
+commit subjects since the previous tag, grouped by the pull request each came in
+through, with anything pushed straight to `main` listed on its own — so write
+commit subjects for a reader, because they *are* the changelog. Preview them before
+tagging with `scripts/release-notes.sh HEAD`. A tag off `main`, or one that is not
+X.Y.Z, fails before anything is built.
+
+**The version is git's, everywhere.** `git describe` against the semver tags is
+the about card's text (a generated `APP_VERSION`, the same on both platforms) and
+Android's `versionName`: `1.4.0` on the tag, `1.4.0-3-gabc1234` three commits past
+it, `-dirty` with uncommitted changes, and `0.0.0-<sha>` before the first tag.
+`versionCode` is `major*10000 + minor*100 + patch`, which is why the release
+workflow refuses a minor or patch of 100. The iOS bundle's own
+`CFBundleShortVersionString` is still the xcconfig's `1.0` — nothing reads it
+while iOS is not distributed, and it will need the same treatment when it is.
+A shallow clone has no tags and describes itself as `0.0.0-<sha>`, which is why
+every checkout in CI fetches the full history.
+
 **Verifying on a device.** The emulator and simulator both lie about performance —
 memory pressure dominates, and neither reproduces a real phone's. For anything about
 speed use a physical device, and check `MemAvailable` and `SwapFree` in
@@ -687,24 +708,25 @@ fine, and CPU and Metal agree on this model to within a word.
   runs home in 180 ms) and the about card, which peels while its scrim lifts.
   A held gesture for a screenshot is `adb shell input motionevent DOWN/MOVE/…`;
   `input swipe` only ever reaches about a third of the progress before committing.
-- **There is no release signing config.** `assembleRelease` produces
-  `composeApp-release-unsigned.apk` and nothing installs it. Test builds so far were
-  signed by hand with the *debug* keystore
-  (`apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android
-  --ks-key-alias androiddebugkey`), which is fine for a phone you own and wrong for
-  anything handed out: the key is public, and a real release later cannot update over
-  it — the signature will not match and the app has to be uninstalled first.
+- **Release signing reads the key from the environment.** `ILOTOKI_KEYSTORE_FILE`,
+  `ILOTOKI_KEYSTORE_PASSWORD`, `ILOTOKI_KEY_ALIAS`, `ILOTOKI_KEY_PASSWORD`; without
+  them `assembleRelease` still produces an unsigned APK, as it always did. The
+  release workflow gets the four from secrets, the keystore base64-encoded as
+  `ILOTOKI_KEYSTORE_BASE64`. **A release-signed APK cannot install over a
+  debug-signed one** — the signatures differ and Android asks for an uninstall
+  first, which takes the downloaded model and the history with it. Phones that have
+  been running debug builds meet that exactly once, on the first release.
 - `gh` is installed and authenticated as NetherQuartz. The Hugging Face token is
   stored (`~/.cache/huggingface/token`), but `hf` is only installed in the pyenv env
   `ilo-toki`; from the default 3.12.2 the shim fails with «command not found».
 
 Open:
 
-- **A real release keystore, before anything is distributed.** `keytool -genkeypair`
-  into a file outside the repository, then `signingConfigs` in
-  [build.gradle.kts](composeApp/build.gradle.kts) reading its passwords from
-  `local.properties` or the environment — never from a committed file. `versionCode`
-  is still 1 and has to start moving once updates are a thing.
+- **iOS is built by CI and released by nobody.** An installable `.ipa` needs
+  signing through the paid Apple Developer Program — which is also what grants the
+  increased-memory-limit entitlements the model needs — and whether a free-account
+  sideload survives loading the model is untested, because only a real iPhone
+  enforces the limit. Once that is known, the release workflow gains an `.ipa`.
 
 - **`ala` is reversed or dropped by the shipped model, and nobody had looked.**
   1.1 turns `jan li lape ala` into «someone is sleeping» and `mi pilin ike la mi

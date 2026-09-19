@@ -5,7 +5,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import platform.Foundation.NSApplicationSupportDirectory
-import platform.Foundation.NSBundle
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSystemFreeSize
 import platform.Foundation.NSNumber
@@ -53,10 +52,6 @@ actual fun modelsDirectory(): String {
 
     return requireNotNull(modelsDirectory.path) { "the models directory has no filesystem path" }
 }
-
-actual val appVersion: String
-    get() = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString")
-        as? String ?: ""
 
 actual fun openUrl(url: String) {
     val target = NSURL.URLWithString(url) ?: return
