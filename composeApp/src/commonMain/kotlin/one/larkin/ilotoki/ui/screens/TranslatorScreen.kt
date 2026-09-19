@@ -71,6 +71,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -83,6 +85,7 @@ import one.larkin.ilotoki.Language
 import one.larkin.ilotoki.MainViewModel
 import one.larkin.ilotoki.SamplePhrases
 import one.larkin.ilotoki.TOKI_PONA
+import one.larkin.ilotoki.TOKI_PONA_KEYBOARD_TAG
 import one.larkin.ilotoki.TranslatorState
 import one.larkin.ilotoki.fractionOrZero
 import one.larkin.ilotoki.model.ModelCatalog
@@ -93,6 +96,7 @@ import one.larkin.ilotoki.ui.AppText
 import one.larkin.ilotoki.ui.Chip
 import one.larkin.ilotoki.ui.IloTokiIcons
 import one.larkin.ilotoki.ui.Motion
+import one.larkin.ilotoki.ui.PlainKeyboard
 import one.larkin.ilotoki.ui.Plate
 import one.larkin.ilotoki.ui.PressSqueeze
 import one.larkin.ilotoki.ui.animatedProgress
@@ -490,66 +494,96 @@ private fun SourcePlate(
     val fromTokiPona = state.fromTokiPona
     val glyphs = fromTokiPona && state.useSitelenPona
 
-    Plate(modifier = modifier) {
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PairStamp(
-                    isTokiPona = fromTokiPona,
-                    other = state.target,
-                    onAccentPlate = false,
-                    onPick = onPickLanguage,
-                    pickerOpen = pickerOpen,
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            BasicTextField(
-                value = state.query,
-                onValueChange = viewModel::onQueryChange,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                textStyle = textStyleFor(glyphs).copy(color = colors.ink),
-                cursorBrush = SolidColor(colors.ink),
-                // Toki Pona is written entirely in lower case and none of its words
-                // are in the keyboard's dictionary, so capitalization and autocorrect
-                // only corrupt the input. Typing the other language keeps both.
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Done,
-                    capitalization = if (fromTokiPona) {
-                        KeyboardCapitalization.None
-                    } else {
-                        KeyboardCapitalization.Sentences
-                    },
-                    autoCorrectEnabled = !fromTokiPona,
-                ),
-                keyboardActions = KeyboardActions(onDone = { viewModel.translate() }),
-                decorationBox = { field ->
-                    Box(Modifier.fillMaxWidth()) {
-                        if (state.query.isEmpty()) {
-                            AppText(
-                                text = if (fromTokiPona) {
-                                    "o toki…"
-                                } else {
-                                    "type ${state.target.displayName}…"
-                                },
-                                style = textStyleFor(glyphs),
-                                modifier = Modifier.fadeIn(200),
-                                color = colors.muted,
-                            )
-                        }
-                        field()
-                    }
-                },
-            )
-            if (fromTokiPona) {
+    // Everything the keyboard is asked for, in one place, because the two sides want
+    // opposite things of it. Toki pona is written entirely in lower case and not one
+    // of its 137 words is in any dictionary, so capitalization, autocorrect and the
+    // suggestion strip have nothing to offer and plenty to corrupt; the other
+    // language is exactly the case the keyboard was built for and keeps all three.
+    // The strip is only asked to go — Gboard shows it anyway; see [PlainKeyboard].
+    // The layout is asked for by name either way — a phone left in Cyrillic cannot
+    // type toki pona at all, and one left in English is a poor way to type Russian.
+    //
+    // [PlainKeyboard] goes around the whole plate rather than around the field: it
+    // provides a composition local and emits no layout node, so the plate stays a
+    // direct child of the column above and keeps the weight it was handed.
+    PlainKeyboard(enabled = fromTokiPona) {
+        Plate(modifier = modifier) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PairStamp(
+                        isTokiPona = fromTokiPona,
+                        other = state.target,
+                        onAccentPlate = false,
+                        onPick = onPickLanguage,
+                        pickerOpen = pickerOpen,
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
-                ScriptButton(
-                    on = state.useSitelenPona,
-                    onAccentPlate = false,
-                    onClick = viewModel::toggleSitelenPona,
+                BasicTextField(
+                    value = state.query,
+                    onValueChange = viewModel::onQueryChange,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    textStyle = textStyleFor(glyphs).copy(color = colors.ink),
+                    cursorBrush = SolidColor(colors.ink),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Done,
+                        // Ascii is the only way to ask iOS for a latin layout at
+                        // all: it has no hint locales, and with plain Text the
+                        // toki pona side came up ЙЦУКЕН on a phone whose last
+                        // keyboard was Russian. On iOS it also takes the QuickType
+                        // bar away, which is wanted here. It costs Android nothing
+                        // — the input type is the same as Text, plus a FORCE_ASCII
+                        // flag that agrees with the hint below.
+                        keyboardType = if (fromTokiPona) {
+                            KeyboardType.Ascii
+                        } else {
+                            KeyboardType.Text
+                        },
+                        capitalization = if (fromTokiPona) {
+                            KeyboardCapitalization.None
+                        } else {
+                            KeyboardCapitalization.Sentences
+                        },
+                        autoCorrectEnabled = !fromTokiPona,
+                        hintLocales = LocaleList(
+                            if (fromTokiPona) {
+                                TOKI_PONA_KEYBOARD_TAG
+                            } else {
+                                state.target.keyboardTag
+                            },
+                        ),
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { viewModel.translate() }),
+                    decorationBox = { field ->
+                        Box(Modifier.fillMaxWidth()) {
+                            if (state.query.isEmpty()) {
+                                AppText(
+                                    text = if (fromTokiPona) {
+                                        "o toki…"
+                                    } else {
+                                        "type ${state.target.displayName}…"
+                                    },
+                                    style = textStyleFor(glyphs),
+                                    modifier = Modifier.fadeIn(200),
+                                    color = colors.muted,
+                                )
+                            }
+                            field()
+                        }
+                    },
                 )
+                if (fromTokiPona) {
+                    Spacer(Modifier.height(10.dp))
+                    ScriptButton(
+                        on = state.useSitelenPona,
+                        onAccentPlate = false,
+                        onClick = viewModel::toggleSitelenPona,
+                    )
+                }
             }
         }
     }

@@ -193,9 +193,11 @@ class MainViewModel : ViewModel() {
                         lastTick = TimeSource.Monotonic.markNow()
                         playHaptic(Haptic.Word)
                     }
-                    _state.update { it.copy(result = it.result + piece) }
+                    _state.update { it.copy(result = appendPiece(it.result, piece)) }
                 }
-                _state.update { it.copy(isTranslating = false) }
+                // trimEnd only at the end: mid-stream the trailing space is what
+                // separates the word that just landed from the one still coming.
+                _state.update { it.copy(result = it.result.trimEnd(), isTranslating = false) }
                 if (SettingsRepository.settings.value.keepHistory) {
                     HistoryRepository.record(
                         fromTokiPona = current.fromTokiPona,
@@ -220,6 +222,25 @@ class MainViewModel : ViewModel() {
         translation = null
     }
 }
+
+/**
+ * Adds one decoded piece to the answer so far, less the space the model opens with.
+ *
+ * The prompt ends in `Toki Pona:` and the first token carries the space that would
+ * follow it, so every answer arrives with a blank at its head. On the plate that is
+ * invisible; it stops being invisible when the swap feeds the result back in as the
+ * next query, where it sits at the front of the input and goes into history with it.
+ * [translationPrompt] trims its query, so the model itself never saw that space —
+ * the input field and the history card did.
+ *
+ * It is taken off the pieces rather than off the finished string because the result
+ * is drawn as it arrives, and a text that starts one space in and shifts left when
+ * the last token lands is the same bug moved somewhere harder to see. A piece that
+ * is nothing but space leaves the result empty, so the trim still applies to
+ * whatever comes after it.
+ */
+internal fun appendPiece(result: String, piece: String): String =
+    if (result.isEmpty()) piece.trimStart() else result + piece
 
 /**
  * True when a still-current entry above the selected one is missing from the device.
