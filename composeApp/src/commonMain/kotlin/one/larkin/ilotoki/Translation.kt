@@ -5,15 +5,31 @@ package one.larkin.ilotoki
  *
  * [modelName] goes into the prompt and must stay in English — it is what the
  * fine-tune was trained on. [displayName] is what a person reads, so it is the
- * endonym; the two are deliberately not the same string.
+ * endonym; the two are deliberately not the same string. [keyboardTag] is a third
+ * spelling again: the BCP-47 tag the keyboard is asked for while this language is
+ * being typed, so its own dictionary and suggestions come up.
  */
-enum class Language(val modelName: String, val displayName: String) {
-    English("English", "English"),
-    Russian("Russian", "Русский"),
-    Vietnamese("Vietnamese", "Tiếng Việt"),
+enum class Language(
+    val modelName: String,
+    val displayName: String,
+    val keyboardTag: String,
+) {
+    English("English", "English", "en"),
+    Russian("Russian", "Русский", "ru"),
+    Vietnamese("Vietnamese", "Tiếng Việt", "vi"),
 }
 
 const val TOKI_PONA = "Toki Pona"
+
+/**
+ * What the keyboard is asked for on the toki pona side.
+ *
+ * `tok` is toki pona's own tag and no keyboard has ever heard of it, so asking for
+ * it would leave whatever came up last — a Cyrillic layout, on a phone that was
+ * typing Russian a moment ago, and toki pona cannot be written in one. English is
+ * the request that reliably produces the plain latin qwerty the 14 letters need.
+ */
+const val TOKI_PONA_KEYBOARD_TAG = "en"
 
 /** «TOKI PONA → ENGLISH», the pair stamp above each plate and on history cards. */
 fun pairLabel(fromTokiPona: Boolean, other: Language): String {

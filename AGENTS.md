@@ -363,6 +363,62 @@ through a lambda inside a layer or draw block, never at composition — a screen
 an expensive thing to recompose sixty times a second. `adb shell dumpsys gfxinfo
 <pkg> reset` before the gesture and reading it after is how any of this was known.
 
+**`autoCorrectEnabled = false` does not turn off the suggestions.** It is the whole
+of what `KeyboardOptions` offers and it only *omits* `TYPE_TEXT_FLAG_AUTO_CORRECT`,
+which stops the keyboard rewriting a word it has decided is wrong. The suggestion
+strip, the predictions and tap-to-complete are `TYPE_TEXT_FLAG_NO_SUGGESTIONS`, no
+field maps to it, and on the toki pona side all three are offering words from a
+dictionary that has never heard of `mi`, `sina` or `pilin`. `PlainKeyboard` reaches
+the `EditorInfo` through `InterceptPlatformTextInput`; two things about it are not
+obvious and both were bugs first: the flag has to be `or`-ed on *after*
+`createInputConnection` has run, because `EditorInfo.update()` assigns `inputType`
+outright and would overwrite it; and the interceptor must be `remember(enabled)`,
+since it lives in a `MutableState` the session collects and handing over a new
+instance is the only thing that restarts the input method with fresh attributes.
+iOS needs none of that: there `autoCorrectEnabled` goes to UIKit as
+`autocorrectionType = .no`, and `KeyboardType.Ascii` — see below — removes the
+QuickType bar outright, keyboard and all. Screenshot both before believing either.
+
+**`KeyboardType.Ascii` is the only thing iOS will listen to about layout.** With
+plain `Text` the toki pona side came up ЙЦУКЕН on a simulator whose last keyboard
+was Russian, and toki pona cannot be typed on one at all. iOS has no hint locales
+and no way for an app to choose an input mode — `textInputMode` can only be
+overridden by subclassing the responder, which is Compose's, not ours — but
+`UIKeyboardTypeASCIICapable` is a constraint the system does honour, and it comes
+out as a latin qwerty with the suggestion strip gone. It costs Android nothing:
+the input type is identical to `Text`, plus `IME_FLAG_FORCE_ASCII` in `imeOptions`,
+which says the same thing as the hint below.
+
+Nothing asks iOS for a *language*, so the other side gets whatever layout was last
+up and the globe key. That is the platform, not a gap in the code; do not go looking
+for the API again.
+
+`KeyboardOptions.hintLocales` is the Android half of it, and it does reach the plain
+`BasicTextField(value:…)`: the legacy path goes through foundation's own
+`EditorInfo.update()` rather than through `TextInputServiceAndroid`, and that is
+where the hint is applied.
+
+Read back what was actually sent rather than trusting the code: focus the field and
+`adb shell dumpsys input_method | grep -A7 curEditorInfo`. Toki pona should give
+`inputType=0xa0001` (`TEXT|MULTI_LINE|NO_SUGGESTIONS`), `imeOptions=0x82000006` (the
+top bit being FORCE_ASCII) and `hintLocales=[en]`; the other side `0x2c001`
+(`TEXT|MULTI_LINE|AUTO_CORRECT|CAP_SENTENCES`), `0x2000006` and its own tag. Whether
+Gboard then *shows* that layout is Gboard's business and depends on which languages
+the phone has installed; the hint is a request, as in Duolingo. To see a soft
+keyboard at all: on the emulator Gboard may not draw one — the dump is the check
+that matters — and on the simulator it needs
+`defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false`
+and a restart of Simulator.
+
+**The model opens its answer with a space.** The prompt ends `Toki Pona:` and the
+first token carries the space that would follow it. Nothing on the plate shows it,
+and then the swap feeds the result back in as the query and it is sitting at the head
+of the input and in the history card. `translationPrompt` trims its query, so the
+model itself never saw it — this was only ever a display bug, but it looked like a
+translation-quality one, which is worse. `appendPiece` takes it off the pieces as
+they arrive rather than off the finished string: trimming at the end means the text
+shifts left when the last token lands.
+
 **Do not hand-list llama.cpp sources.** Upstream split every architecture into its
 own translation unit (168 files under `src/`). The Android build delegates to
 llama.cpp's own CMake for this reason; a hand-maintained list rotted on the first
@@ -596,6 +652,14 @@ fine, and CPU and Metal agree on this model to within a word.
   deletion, translation in all three languages both ways. The redesign itself was
   walked through on an iPhone 17 Pro simulator and a Pixel 9 emulator: first run,
   download start/pause/resume, translation, script flip, history, both themes.
+- The keyboard is done on both platforms and checked on both. Pixel 9 emulator:
+  `dumpsys input_method` for each side, and the swapped-in result checked for the
+  leading space. iPhone 17 Pro simulator: the toki pona side comes up latin with no
+  suggestion strip, the other side keeps its strip and its capitalization, and
+  `kasi li kama suli` → «Plant grows» swaps back into the input flush to the edge.
+  Not checked on a real phone yet — a physical Pixel is the one thing outstanding,
+  and the only thing it can add is which layout Gboard actually chooses from the
+  hint, since that depends on the languages installed.
 - The animations are in and frame-counted on a Pixel 6, a Pixel 9 emulator and an
   iPhone 17 Pro simulator: screen and card entrances, the popover, the segmented
   slide (240 ms), the toggle knob, the press sink (~85 ms), the slab's colour
