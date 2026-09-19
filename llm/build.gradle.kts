@@ -17,10 +17,12 @@ val buildLlamaApple by tasks.registering(Exec::class) {
     description = "Builds llama.cpp as static libraries for the iOS targets"
 
     val script = rootProject.file("scripts/build-llama-apple.sh")
-    inputs.file(script)
-    inputs.dir(layout.projectDirectory.dir("src/nativeCommon/cpp"))
-    inputs.file(rootProject.file("llama.cpp/CMakeLists.txt"))
-    outputs.dir(llamaAppleDir)
+    // Deliberately no declared outputs: the script decides what is stale, and runs
+    // in milliseconds when nothing is. Declaring the directory made Gradle treat
+    // archives it had not built itself as stale and delete them before the task —
+    // which is exactly what CI's restored cache is, so every run rebuilt llama.cpp.
+    // Nothing downstream needs the declaration: cinterop depends on this task
+    // explicitly below, not through its outputs.
 
     commandLine(script.absolutePath, llamaAppleDir.get().asFile.absolutePath)
 }
