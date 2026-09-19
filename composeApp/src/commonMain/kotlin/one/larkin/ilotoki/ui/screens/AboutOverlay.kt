@@ -20,7 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import one.larkin.ilotoki.Language
-import one.larkin.ilotoki.appVersion
+import one.larkin.ilotoki.APP_VERSION
 import one.larkin.ilotoki.model.ModelSpec
 import one.larkin.ilotoki.openUrl
 import one.larkin.ilotoki.ui.AppText
@@ -84,7 +84,7 @@ fun AboutOverlay(model: ModelSpec, loaded: Boolean, onDismiss: () -> Unit) {
                         AppText("ilo toki", type.title.copy(fontSize = 20.sp))
                         Spacer(Modifier.height(5.dp))
                         AppText(
-                            text = "$appVersion · ${Language.entries.size} languages, " +
+                            text = "$APP_VERSION ·${Language.entries.size} languages, " +
                                 "none of them online",
                             style = type.meta.copy(fontSize = 11.5.sp),
                             color = colors.muted,

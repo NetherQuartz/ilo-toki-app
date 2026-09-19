@@ -23,8 +23,5 @@ expect fun modelsDirectory(): String
  */
 expect fun freeDiskBytes(): Long
 
-/** The version the about card shows, read from the platform's own bundle metadata. */
-expect val appVersion: String
-
 /** Opens [url] in whatever the system uses for links. Fails silently if nothing does. */
 expect fun openUrl(url: String)
