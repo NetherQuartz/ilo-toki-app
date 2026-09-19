@@ -77,7 +77,7 @@ jobs:
       # only changes with the submodule or the C core.
       - name: Restore the iOS llama.cpp archives
         id: llama-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: llm/build/llama-apple
           key: llama-apple-${{ steps.llama.outputs.sha }}-${{ hashFiles('scripts/build-llama-apple.sh', 'llm/src/nativeCommon/cpp/**') }}
