@@ -32,7 +32,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Install the NDK and CMake the build pins
         run: |
@@ -71,7 +71,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       # llama.cpp for both iOS targets is the slowest thing in the whole build and
       # only changes with the submodule or the C core.
